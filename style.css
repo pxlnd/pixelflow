@@ -1,0 +1,37 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at top, #71739b 0%, #4a4e6d 38%, #2a2d43 100%);
+  font-family: "Trebuchet MS", "Verdana", sans-serif;
+  color: #ffffff;
+}
+
+.app {
+  width: min(100vw, 440px);
+  padding: 12px;
+}
+
+#gameCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 390 / 844;
+  border-radius: 28px;
+  touch-action: manipulation;
+  cursor: pointer;
+  box-shadow:
+    0 24px 60px rgba(7, 11, 24, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
