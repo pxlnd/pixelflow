@@ -23,6 +23,13 @@ const BOARD_FILL_COLOR = "#6aa93a";
 const FIELD_UNDERLAY_COLOR = "#6fb53f";
 const SHOOTER_CARD_Y_OFFSET = 132;
 const SHOOTER_SLOT_Y_OFFSET = 28;
+const VICTORY_ZOOM_TARGET = 1.12;
+const VICTORY_ZOOM_SPEED = 3.2;
+const VICTORY_CONFETTI_DURATION = 1.8;
+const VICTORY_FLOAT_SPEED = 0.85;
+const VICTORY_FLOAT_AMPLITUDE = 12;
+const VICTORY_ART_OFFSET_Y = 110;
+const VICTORY_CONFETTI_RATE = 42;
 
 const LAYOUT = {
   fieldX: 220,
@@ -113,6 +120,8 @@ const COLORS = {
   fieldShadow: "rgba(16, 28, 9, 0.24)",
   blockShadow: "rgba(15, 24, 8, 0.28)",
 };
+
+const CONFETTI_COLORS = ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"];
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -589,6 +598,7 @@ class Game {
     this.units = [];
     this.projectiles = [];
     this.particles = [];
+    this.confetti = [];
     this.cardManager = new CardManager(LAYOUT.cards);
     this.slotManager = new SlotManager(LAYOUT.slots, SLOT_CLAIM_ORDER);
     this.cards = [];
@@ -607,6 +617,12 @@ class Game {
     this.needsRender = true;
     this.isLoopRunning = false;
     this.unitIdCounter = 0;
+    this.cameraZoom = 1;
+    this.cameraZoomTarget = 1;
+    this.victoryConfettiTime = 0;
+    this.victoryFloatTime = 0;
+    this.victoryConfettiSpawnCarry = 0;
+    this.debugButton = document.getElementById("debug6");
 
     this.bindEvents();
     this.resize();
@@ -820,18 +836,17 @@ class Game {
     return patch;
   }
 
-  drawGrassBackdrop(ctx, rect) {
+  drawTiledBackdrop(ctx, rect, fillColor, palette, shadeDark) {
     ctx.save();
     ctx.beginPath();
     ctx.rect(rect.x, rect.y, rect.w, rect.h);
     ctx.clip();
 
-    ctx.fillStyle = BOARD_FILL_COLOR;
+    ctx.fillStyle = fillColor;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
 
     const patch = 64;
     const sub = 16;
-    const palette = ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"];
     for (let y = rect.y; y < rect.y + rect.h; y += patch) {
       for (let x = rect.x; x < rect.x + rect.w; x += patch) {
         const tileX = Math.floor((x - rect.x) / patch);
@@ -851,13 +866,33 @@ class Game {
         ctx.fillStyle = "rgba(255,255,255,0.12)";
         ctx.fillRect(x, y, patch, 4);
         ctx.fillRect(x, y, 4, patch);
-        ctx.fillStyle = "rgba(28, 52, 14, 0.16)";
+        ctx.fillStyle = shadeDark;
         ctx.fillRect(x, y + patch - 4, patch, 4);
         ctx.fillRect(x + patch - 4, y, 4, patch);
       }
     }
 
     ctx.restore();
+  }
+
+  drawGrassBackdrop(ctx, rect) {
+    this.drawTiledBackdrop(
+      ctx,
+      rect,
+      BOARD_FILL_COLOR,
+      ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"],
+      "rgba(28, 52, 14, 0.16)"
+    );
+  }
+
+  drawDirtBackdrop(ctx, rect) {
+    this.drawTiledBackdrop(
+      ctx,
+      rect,
+      "#b98c5e",
+      ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
+      "rgba(64, 40, 22, 0.2)"
+    );
   }
 
   restart() {
@@ -871,9 +906,15 @@ class Game {
     this.units = [];
     this.projectiles = [];
     this.particles = [];
+    this.confetti = [];
     this.cards = this.cardManager.resetFromBlocks(this.blocks);
     this.slotManager.reset();
     this.setWagonIdle();
+    this.cameraZoom = 1;
+    this.cameraZoomTarget = 1;
+    this.victoryConfettiTime = 0;
+    this.victoryFloatTime = 0;
+    this.victoryConfettiSpawnCarry = 0;
 
     this.gameState = "playing";
     this.remainingBlocks = this.blocks.length;
@@ -1135,6 +1176,10 @@ class Game {
 
   findTargetOnLine(sourcePoint, color, direction) {
     const lineHalfWidth = LAYOUT.cellSize * 0.42;
+    const activeInnerLayer = this.getActiveInnerLayer();
+    if (activeInnerLayer < 0) {
+      return null;
+    }
     const reservedTargets = new Set(
       this.projectiles
         .filter((projectile) => projectile.target && !projectile.target.alive)
@@ -1146,6 +1191,9 @@ class Game {
     let bestForwardDistance = Infinity;
     for (const block of this.blocks) {
       if (block.alive || block.color !== color || reservedTargets.has(block.id)) {
+        continue;
+      }
+      if (block.layer !== activeInnerLayer) {
         continue;
       }
       const sideDepth =
@@ -1182,6 +1230,16 @@ class Game {
     }
 
     return best;
+  }
+
+  getActiveInnerLayer() {
+    let maxLayer = -1;
+    for (const block of this.blocks) {
+      if (!block.alive && block.layer > maxLayer) {
+        maxLayer = block.layer;
+      }
+    }
+    return maxLayer;
   }
 
   fireProjectile(unit, block) {
@@ -1246,7 +1304,121 @@ class Game {
     }
   }
 
+  hasSpawnablePigs() {
+    if (this.units.some((unit) => unit.alive)) {
+      return true;
+    }
+    return this.cards.some((card) => !card.used && card.ammo > 0);
+  }
+
+  checkVictoryReady() {
+    if (this.gameState !== "playing") {
+      return false;
+    }
+    if (this.remainingBlocks > 0) {
+      return false;
+    }
+    if (this.projectiles.length > 0) {
+      return false;
+    }
+    return !this.hasSpawnablePigs();
+  }
+
+  startVictorySequence() {
+    if (this.gameState === "victory") {
+      return;
+    }
+    this.gameState = "victory";
+    this.cameraZoomTarget = VICTORY_ZOOM_TARGET;
+    this.victoryConfettiTime = VICTORY_CONFETTI_DURATION;
+    this.victoryFloatTime = 0;
+    this.victoryConfettiSpawnCarry = 0;
+    this.units = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.spawnConfettiBurst(64);
+  }
+
+  triggerDebug6() {
+    if (!this.referenceImage.complete || this.blocks.length === 0) {
+      return false;
+    }
+
+    for (const block of this.blocks) {
+      block.alive = true;
+      block.hitFlash = 0;
+    }
+    for (const card of this.cards) {
+      card.used = true;
+      card.ammo = 0;
+    }
+
+    this.remainingBlocks = 0;
+    this.units = [];
+    this.projectiles = [];
+    this.particles = [];
+
+    if (this.gameState !== "victory") {
+      this.startVictorySequence();
+    } else {
+      this.victoryConfettiTime = VICTORY_CONFETTI_DURATION;
+      this.victoryConfettiSpawnCarry = 0;
+      this.spawnConfettiBurst(64);
+    }
+    this.invalidate(true);
+    return true;
+  }
+
+  spawnConfettiBurst(amount) {
+    for (let i = 0; i < amount; i++) {
+      const x = Math.random() * this.width;
+      const y = -16 - Math.random() * 74;
+      const angle = Math.PI / 2 + (Math.random() - 0.5) * 1.4;
+      const speed = 90 + Math.random() * 180;
+      this.confetti.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed + (Math.random() - 0.5) * 50,
+        vy: Math.sin(angle) * speed + 40 + Math.random() * 90,
+        size: 16 + Math.random() * 18,
+        color: CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0],
+        rotation: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 6,
+        life: 6 + Math.random() * 2.5,
+        maxLife: 8.5,
+      });
+    }
+  }
+
+  updateConfetti(dt) {
+    this.confetti = this.confetti
+      .map((piece) => ({
+        ...piece,
+        x: piece.x + piece.vx * dt,
+        y: piece.y + piece.vy * dt,
+        vx: piece.vx * 0.997,
+        vy: piece.vy + 280 * dt,
+        rotation: piece.rotation + piece.spin * dt,
+        life: piece.life - dt,
+      }))
+      .filter((piece) => piece.life > 0 && piece.y < this.height + 80);
+  }
+
   update(dt) {
+    if (this.gameState === "victory") {
+      this.victoryConfettiTime = Math.max(0, this.victoryConfettiTime - dt);
+      this.victoryConfettiSpawnCarry += dt * VICTORY_CONFETTI_RATE;
+      const spawnNow = Math.floor(this.victoryConfettiSpawnCarry);
+      if (spawnNow > 0) {
+        this.victoryConfettiSpawnCarry -= spawnNow;
+        this.spawnConfettiBurst(spawnNow);
+      }
+      this.victoryFloatTime += dt;
+      this.updateConfetti(dt);
+      this.cameraZoom += (this.cameraZoomTarget - this.cameraZoom) * Math.min(1, dt * VICTORY_ZOOM_SPEED);
+      return;
+    }
+
     for (const block of this.blocks) {
       block.update(dt);
     }
@@ -1277,6 +1449,13 @@ class Game {
         life: particle.life - dt,
       }))
       .filter((particle) => particle.life > 0);
+
+    if (this.checkVictoryReady()) {
+      this.startVictorySequence();
+    }
+
+    this.updateConfetti(dt);
+    this.cameraZoom += (this.cameraZoomTarget - this.cameraZoom) * Math.min(1, dt * VICTORY_ZOOM_SPEED);
   }
 
   drawLoading(ctx) {
@@ -1328,11 +1507,11 @@ class Game {
     ctx.fill();
     ctx.restore();
 
-    // Fill inside the rails with the same scene backdrop instead of a separate green plate.
+    // Fill inside the rails using the same tiled style as the outer backdrop, but brown.
     ctx.save();
     roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
     ctx.clip();
-    this.drawGrassBackdrop(ctx, innerWood);
+    this.drawDirtBackdrop(ctx, innerWood);
     ctx.restore();
 
     // Sleepers along the path.
@@ -1383,6 +1562,59 @@ class Game {
 
   }
 
+  drawVictoryBackground(ctx) {
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
+    gradient.addColorStop(0, "#d8f3ff");
+    gradient.addColorStop(0.55, "#a8ddff");
+    gradient.addColorStop(1, "#8bc9ff");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.width, this.height);
+
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.beginPath();
+    ctx.arc(this.width * 0.16, this.height * 0.18, 120, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(this.width * 0.84, this.height * 0.28, 170, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  drawVictoryArtwork(ctx) {
+    const floatOffset = Math.sin(this.victoryFloatTime * Math.PI * VICTORY_FLOAT_SPEED) * VICTORY_FLOAT_AMPLITUDE;
+    const boardX = LAYOUT.fieldX;
+    const boardY = LAYOUT.fieldY + VICTORY_ART_OFFSET_Y;
+    const boardW = LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const boardH = LAYOUT.fieldRows * LAYOUT.fieldStep;
+
+    ctx.save();
+    ctx.translate(0, floatOffset);
+    ctx.shadowColor = "rgba(16, 56, 104, 0.32)";
+    ctx.shadowBlur = 30;
+    ctx.shadowOffsetY = 18;
+    roundedRect(ctx, boardX - 12, boardY - 12, boardW + 24, boardH + 24, 18);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+    ctx.fill();
+    ctx.restore();
+
+    for (const block of this.blocks) {
+      const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+      const x = block.x;
+      const y = block.y + VICTORY_ART_OFFSET_Y + floatOffset;
+      ctx.save();
+      if (sprite) {
+        ctx.drawImage(sprite, x, y, block.size, block.size);
+      } else {
+        ctx.fillStyle = block.color === "green" ? "#81c341" : "#2a2a2a";
+        roundedRect(ctx, x, y, block.size, block.size, 8);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
   drawDestroyedBlocks(ctx) {
     for (const block of this.blocks) {
       if (block.alive) {
@@ -1418,6 +1650,25 @@ class Game {
       ctx.restore();
     }
 
+  }
+
+  drawTargetSilhouette(ctx) {
+    for (const block of this.blocks) {
+      if (block.alive) {
+        continue;
+      }
+      const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      if (sprite) {
+        ctx.drawImage(sprite, block.x, block.y, block.size, block.size);
+      } else {
+        ctx.fillStyle = block.color === "green" ? "#81c341" : "#2a2a2a";
+        roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
   }
 
   drawUnitsOnTrack(ctx) {
@@ -1629,6 +1880,19 @@ class Game {
     }
   }
 
+  drawConfetti(ctx) {
+    for (const piece of this.confetti) {
+      const alpha = Math.max(0, piece.life / piece.maxLife);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(piece.x, piece.y);
+      ctx.rotate(piece.rotation);
+      ctx.fillStyle = piece.color;
+      ctx.fillRect(-piece.size * 0.5, -piece.size * 0.25, piece.size, piece.size * 0.5);
+      ctx.restore();
+    }
+  }
+
   render() {
     const ctx = this.ctx;
     if (this.gameState === "loading") {
@@ -1637,7 +1901,27 @@ class Game {
     }
 
     ctx.clearRect(0, 0, this.width, this.height);
+    if (this.gameState === "victory") {
+      this.drawVictoryBackground(ctx);
+      const fieldCenter = this.getFieldCenter();
+      ctx.save();
+      ctx.translate(fieldCenter.x, fieldCenter.y);
+      ctx.scale(this.cameraZoom, this.cameraZoom);
+      ctx.translate(-fieldCenter.x, -fieldCenter.y);
+      this.drawVictoryArtwork(ctx);
+      ctx.restore();
+      this.drawConfetti(ctx);
+      this.needsRender = false;
+      return;
+    }
+
+    const fieldCenter = this.getFieldCenter();
+    ctx.save();
+    ctx.translate(fieldCenter.x, fieldCenter.y);
+    ctx.scale(this.cameraZoom, this.cameraZoom);
+    ctx.translate(-fieldCenter.x, -fieldCenter.y);
     this.drawBackground(ctx);
+    this.drawTargetSilhouette(ctx);
     this.drawWagonLayer(ctx);
     this.drawBottomCleanup(ctx);
     this.drawDestroyedBlocks(ctx);
@@ -1647,6 +1931,8 @@ class Game {
     this.drawCardState(ctx);
     this.drawUnitsOnTrack(ctx);
     this.drawTapDebug(ctx);
+    ctx.restore();
+    this.drawConfetti(ctx);
     this.needsRender = false;
   }
 
@@ -1676,10 +1962,14 @@ class Game {
 
   hasActiveAnimations() {
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
+    const zoomAnimating = Math.abs(this.cameraZoomTarget - this.cameraZoom) > 0.001;
     if (
       (this.gameState === "playing" && hasActiveUnits) ||
       this.projectiles.length > 0 ||
-      this.particles.length > 0
+      this.particles.length > 0 ||
+      this.confetti.length > 0 ||
+      this.victoryConfettiTime > 0 ||
+      zoomAnimating
     ) {
       return true;
     }
@@ -1719,6 +2009,9 @@ class Game {
   }
 
   handlePointerDown(x, y) {
+    if (this.gameState !== "playing") {
+      return;
+    }
     if (this.tryRelaunchParkedUnitAt(x, y)) {
       return;
     }
@@ -1747,6 +2040,12 @@ class Game {
       this.handlePointerDown(point.x, point.y);
       event.preventDefault();
     });
+    if (this.debugButton) {
+      this.debugButton.addEventListener("click", (event) => {
+        this.triggerDebug6();
+        event.preventDefault();
+      });
+    }
   }
 
   advanceTime(ms) {
@@ -1805,3 +2104,4 @@ const game = new Game(canvas);
 window.game = game;
 window.advanceTime = (ms) => game.advanceTime(ms);
 window.render_game_to_text = () => game.renderGameToText();
+window.debug6 = () => game.triggerDebug6();
