@@ -18,9 +18,8 @@ body {
 
 .app {
   --game-aspect: calc(1024 / 1600);
-  --fit-scale: 0.88;
-  width: min(96vw, calc(100vh * var(--game-aspect) * var(--fit-scale)));
-  max-height: 100vh;
+  width: min(100vw, calc(100vh * var(--game-aspect)));
+  height: 100vh;
   padding: 0;
 }
 
@@ -31,15 +30,15 @@ body {
   }
 
   .app {
-    width: min(96vw, calc(100dvh * var(--game-aspect) * var(--fit-scale)));
-    max-height: 100dvh;
+    width: min(100vw, calc(100dvh * var(--game-aspect)));
+    height: 100dvh;
   }
 }
 
 #gameCanvas {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   aspect-ratio: 1024 / 1600;
   image-rendering: pixelated;
   image-rendering: crisp-edges;

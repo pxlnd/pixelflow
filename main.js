@@ -2,8 +2,8 @@ const LOGICAL_WIDTH = 1024;
 const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
 const MAX_ACTIVE_UNITS = 4;
-const FIRE_INTERVAL = 0.07;
-const BULLET_SPEED = 1860;
+const FIRE_INTERVAL = 0.02;
+const BULLET_SPEED = 3200;
 const BULLET_RADIUS = 8;
 const BULLET_TRAIL_LENGTH = 32;
 const SHOOTER_PIG_SIZE = 117;
@@ -26,7 +26,7 @@ const SHOOTER_SLOT_Y_OFFSET = 28;
 
 const LAYOUT = {
   fieldX: 220,
-  fieldY: 196,
+  fieldY: 276,
   fieldStep: 32,
   cellSize: 32,
   fieldCols: 18,
@@ -68,11 +68,11 @@ const LAYOUT = {
     h: 200,
   },
   boardMask: {
-    x: 30,
-    y: 44,
-    w: 964,
-    h: 968,
-    r: 78,
+    x: 0,
+    y: 0,
+    w: 1024,
+    h: 1600,
+    r: 0,
   },
 };
 
@@ -109,6 +109,9 @@ const COLORS = {
   particleGreen: "#8fe266",
   particleBlack: "#161616",
   clearedGround: "#3f3b37",
+  sceneShadow: "rgba(19, 32, 10, 0.2)",
+  fieldShadow: "rgba(16, 28, 9, 0.24)",
+  blockShadow: "rgba(15, 24, 8, 0.28)",
 };
 
 function clamp(value, min, max) {
@@ -174,7 +177,13 @@ class Block {
     this.col = col;
     this.row = row;
     this.color = color;
-    this.alive = true;
+    this.layer = Math.min(
+      col,
+      row,
+      LAYOUT.fieldCols - 1 - col,
+      LAYOUT.fieldRows - 1 - row
+    );
+    this.alive = false;
     this.hitFlash = 0;
     this.x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
     this.y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
@@ -811,6 +820,46 @@ class Game {
     return patch;
   }
 
+  drawGrassBackdrop(ctx, rect) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+
+    ctx.fillStyle = BOARD_FILL_COLOR;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+
+    const patch = 64;
+    const sub = 16;
+    const palette = ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"];
+    for (let y = rect.y; y < rect.y + rect.h; y += patch) {
+      for (let x = rect.x; x < rect.x + rect.w; x += patch) {
+        const tileX = Math.floor((x - rect.x) / patch);
+        const tileY = Math.floor((y - rect.y) / patch);
+        const seed = tileX * 17 + tileY * 31;
+        ctx.fillStyle = palette[Math.abs(seed) % palette.length];
+        ctx.fillRect(x, y, patch, patch);
+
+        for (let sy = 0; sy < patch; sy += sub) {
+          for (let sx = 0; sx < patch; sx += sub) {
+            const tone = Math.abs(seed + sx / sub + (sy / sub) * 3) % palette.length;
+            ctx.fillStyle = palette[tone];
+            ctx.fillRect(x + sx, y + sy, sub, sub);
+          }
+        }
+
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.fillRect(x, y, patch, 4);
+        ctx.fillRect(x, y, 4, patch);
+        ctx.fillStyle = "rgba(28, 52, 14, 0.16)";
+        ctx.fillRect(x, y + patch - 4, patch, 4);
+        ctx.fillRect(x + patch - 4, y, 4, patch);
+      }
+    }
+
+    ctx.restore();
+  }
+
   restart() {
     if (!this.referenceImage.complete) {
       this.gameState = "loading";
@@ -1058,33 +1107,55 @@ class Game {
   }
 
   getInwardShootDirection(sourcePoint) {
-    const center = this.getFieldCenter();
-    const dx = center.x - sourcePoint.x;
-    const dy = center.y - sourcePoint.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 1e-6) {
-      return null;
+    const fieldWidth = LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const fieldHeight = LAYOUT.fieldRows * LAYOUT.fieldStep;
+    const left = LAYOUT.fieldX;
+    const right = left + fieldWidth;
+    const top = LAYOUT.fieldY;
+    const bottom = top + fieldHeight;
+    const laneTolerance = LAYOUT.cellSize * 0.65;
+    const alignedX = sourcePoint.x >= left - laneTolerance && sourcePoint.x <= right + laneTolerance;
+    const alignedY = sourcePoint.y >= top - laneTolerance && sourcePoint.y <= bottom + laneTolerance;
+
+    if (sourcePoint.y < top && alignedX) {
+      return { x: 0, y: 1, side: "top" };
     }
-    return {
-      x: dx / dist,
-      y: dy / dist,
-    };
+    if (sourcePoint.y > bottom && alignedX) {
+      return { x: 0, y: -1, side: "bottom" };
+    }
+    if (sourcePoint.x < left && alignedY) {
+      return { x: 1, y: 0, side: "left" };
+    }
+    if (sourcePoint.x > right && alignedY) {
+      return { x: -1, y: 0, side: "right" };
+    }
+
+    return null;
   }
 
   findTargetOnLine(sourcePoint, color, direction) {
-    let best = null;
-    let bestDistance = Infinity;
-    const lineHalfWidth = LAYOUT.cellSize * 0.45;
+    const lineHalfWidth = LAYOUT.cellSize * 0.42;
     const reservedTargets = new Set(
       this.projectiles
-        .filter((projectile) => projectile.target && projectile.target.alive)
+        .filter((projectile) => projectile.target && !projectile.target.alive)
         .map((projectile) => projectile.target.id)
     );
-
+    let best = null;
+    let bestLayer = -1;
+    let bestSideDepth = Infinity;
+    let bestForwardDistance = Infinity;
     for (const block of this.blocks) {
-      if (!block.alive || block.color !== color || reservedTargets.has(block.id)) {
+      if (block.alive || block.color !== color || reservedTargets.has(block.id)) {
         continue;
       }
+      const sideDepth =
+        direction.side === "left"
+          ? block.col
+          : direction.side === "right"
+            ? LAYOUT.fieldCols - 1 - block.col
+            : direction.side === "top"
+              ? block.row
+              : LAYOUT.fieldRows - 1 - block.row;
       const center = this.blockCenter(block);
       const dx = center.x - sourcePoint.x;
       const dy = center.y - sourcePoint.y;
@@ -1096,10 +1167,18 @@ class Game {
       if (sideDistance > lineHalfWidth) {
         continue;
       }
-      if (forwardDistance < bestDistance) {
-        bestDistance = forwardDistance;
-        best = block;
+      const betterLayer = block.layer > bestLayer;
+      const sameLayer = block.layer === bestLayer;
+      const betterDepth = sameLayer && sideDepth < bestSideDepth;
+      const sameDepth = sameLayer && sideDepth === bestSideDepth;
+      const betterDistance = sameDepth && forwardDistance < bestForwardDistance;
+      if (!betterLayer && !betterDepth && !betterDistance) {
+        continue;
       }
+      best = block;
+      bestLayer = block.layer;
+      bestSideDepth = sideDepth;
+      bestForwardDistance = forwardDistance;
     }
 
     return best;
@@ -1110,33 +1189,35 @@ class Game {
     const dx = target.x - unit.position.x;
     const dy = target.y - unit.position.y;
     const dist = Math.max(1, Math.hypot(dx, dy));
+    const life = Math.max(0.03, dist / BULLET_SPEED);
 
     this.projectiles.push({
       x: unit.position.x,
       y: unit.position.y,
+      fromX: unit.position.x,
+      fromY: unit.position.y,
       toX: target.x,
       toY: target.y,
-      vx: (dx / dist) * BULLET_SPEED,
-      vy: (dy / dist) * BULLET_SPEED,
-      life: Math.max(0.06, dist / BULLET_SPEED),
+      life,
+      maxLife: life,
       target: block,
       color: unit.color,
-      radius: BULLET_RADIUS,
-      trailLength: BULLET_TRAIL_LENGTH,
+      radius: BULLET_RADIUS * 0.9,
+      trailLength: BULLET_TRAIL_LENGTH * 0.7,
     });
   }
 
   damageBlock(block, color) {
-    if (!block || !block.alive) {
+    if (!block || block.alive) {
       return;
     }
 
-    block.alive = false;
+    block.alive = true;
     block.hitFlash = 1;
     this.remainingBlocks -= 1;
 
     const center = this.blockCenter(block);
-    this.spawnParticles(center.x, center.y, color, 10);
+    this.spawnParticles(center.x, center.y, color, 16);
 
   }
 
@@ -1178,16 +1259,10 @@ class Game {
     const nextProjectiles = [];
     for (const projectile of this.projectiles) {
       projectile.life -= dt;
-      projectile.x += projectile.vx * dt;
-      projectile.y += projectile.vy * dt;
-
-      const reachedTarget =
-        projectile.life <= 0 ||
-        Math.hypot(projectile.x - projectile.toX, projectile.y - projectile.toY) <= projectile.radius + 2;
-      if (reachedTarget) {
-        this.damageBlock(projectile.target, projectile.color);
-      } else {
+      if (projectile.life > 0) {
         nextProjectiles.push(projectile);
+      } else {
+        this.damageBlock(projectile.target, projectile.color);
       }
     }
     this.projectiles = nextProjectiles;
@@ -1220,23 +1295,7 @@ class Game {
     ctx.fillRect(0, 0, this.width, this.height);
     const board = LAYOUT.boardMask;
 
-    // Base board area (grass).
-    ctx.save();
-    roundedRect(ctx, board.x, board.y, board.w, board.h, board.r);
-    ctx.fillStyle = BOARD_FILL_COLOR;
-    ctx.fill();
-    ctx.restore();
-
-    // Guaranteed non-brown underlay under the 9x9 image field.
-    ctx.save();
-    ctx.fillStyle = FIELD_UNDERLAY_COLOR;
-    ctx.fillRect(
-      LAYOUT.fieldX - 2,
-      LAYOUT.fieldY - 2,
-      LAYOUT.fieldCols * LAYOUT.fieldStep + 4,
-      LAYOUT.fieldRows * LAYOUT.fieldStep + 4
-    );
-    ctx.restore();
+    this.drawGrassBackdrop(ctx, board);
 
     // Wood ring around track.
     const outerWood = {
@@ -1254,6 +1313,9 @@ class Game {
       r: Math.max(8, LAYOUT.track.r - 34),
     };
     ctx.save();
+    ctx.shadowColor = COLORS.sceneShadow;
+    ctx.shadowBlur = 36;
+    ctx.shadowOffsetY = 14;
     ctx.beginPath();
     roundedRect(ctx, outerWood.x, outerWood.y, outerWood.w, outerWood.h, outerWood.r);
     roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
@@ -1264,10 +1326,13 @@ class Game {
     ctx.fillStyle = woodGrad;
     // roundedRect() starts a new path internally, so fill the outer wood first...
     ctx.fill();
-    // ...then paint the center back to board color to avoid a solid brown square in the field.
+    ctx.restore();
+
+    // Fill inside the rails with the same scene backdrop instead of a separate green plate.
+    ctx.save();
     roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
-    ctx.fillStyle = BOARD_FILL_COLOR;
-    ctx.fill();
+    ctx.clip();
+    this.drawGrassBackdrop(ctx, innerWood);
     ctx.restore();
 
     // Sleepers along the path.
@@ -1320,24 +1385,29 @@ class Game {
 
   drawDestroyedBlocks(ctx) {
     for (const block of this.blocks) {
-      if (!block.alive) {
-        continue;
-      }
-      const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
-      if (sprite) {
-        ctx.drawImage(sprite, block.x, block.y, block.size, block.size);
-      } else {
-        ctx.fillStyle = block.color === "green" ? "#81c341" : "#2a2a2a";
-        roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
+      if (block.alive) {
+        const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = COLORS.blockShadow;
+        roundedRect(ctx, block.x + 2, block.y + 4, block.size - 1, block.size - 1, 8);
         ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
+        if (sprite) {
+          ctx.drawImage(sprite, block.x, block.y, block.size, block.size);
+        } else {
+          ctx.fillStyle = block.color === "green" ? "#81c341" : "#2a2a2a";
+          roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.08)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
       }
     }
 
     for (const block of this.blocks) {
-      if (block.alive || block.hitFlash <= 0) {
+      if (!block.alive || block.hitFlash <= 0) {
         continue;
       }
       ctx.save();
@@ -1377,6 +1447,9 @@ class Game {
       const x = slot.x + (slot.w - size) * 0.5;
       const y = slot.y + (slot.h - size) * 0.5;
       ctx.save();
+      ctx.fillStyle = "rgba(17, 24, 14, 0.22)";
+      roundedRect(ctx, x + 2, y + 5, size, size, 14);
+      ctx.fill();
       roundedRect(ctx, x, y, size, size, 14);
       ctx.fillStyle = "rgba(20, 26, 32, 0.62)";
       ctx.fill();
@@ -1425,13 +1498,7 @@ class Game {
   }
 
   drawBottomCleanup(ctx) {
-    const slotsBottom = Math.max(...LAYOUT.slots.map((slot) => slot.y + slot.h));
-    const y = Math.floor(slotsBottom);
-    const h = this.height - y;
-    ctx.save();
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, y, this.width, h);
-    ctx.restore();
+    void ctx;
   }
 
   drawAmmoBadge(ctx, x, y, value, width, fontSize) {
@@ -1506,39 +1573,48 @@ class Game {
     for (const projectile of this.projectiles) {
       const bulletColor = projectile.color === "green" ? COLORS.bulletGreen : COLORS.bulletBlack;
       const bulletCoreColor = projectile.color === "green" ? COLORS.bulletGreenCore : COLORS.bulletBlackCore;
-      const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
-      const dirX = projectile.vx / speed;
-      const dirY = projectile.vy / speed;
-      const tailX = projectile.x - dirX * projectile.trailLength;
-      const tailY = projectile.y - dirY * projectile.trailLength;
+      const fade = projectile.maxLife > 0 ? projectile.life / projectile.maxLife : 0;
+      const progress = 1 - fade;
+      const dx = projectile.toX - projectile.fromX;
+      const dy = projectile.toY - projectile.fromY;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const dirX = dx / dist;
+      const dirY = dy / dist;
+      const headX = projectile.fromX + dx * progress;
+      const headY = projectile.fromY + dy * progress;
+      const tailX = headX - dirX * Math.min(projectile.trailLength, dist * 0.5);
+      const tailY = headY - dirY * Math.min(projectile.trailLength, dist * 0.5);
+      const blockSize = LAYOUT.cellSize * 0.78;
+      const blockSprite = projectile.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
       ctx.save();
-      ctx.globalAlpha = 0.75;
+      ctx.globalAlpha = 0.45 * fade;
       ctx.strokeStyle = bulletColor;
       ctx.lineCap = "round";
       ctx.lineWidth = projectile.radius * 1.35;
       ctx.beginPath();
       ctx.moveTo(tailX, tailY);
-      ctx.lineTo(projectile.x, projectile.y);
+      ctx.lineTo(headX, headY);
       ctx.stroke();
 
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 0.92 * fade;
       ctx.strokeStyle = bulletCoreColor;
       ctx.lineWidth = projectile.radius * 0.6;
       ctx.beginPath();
       ctx.moveTo(tailX + dirX * projectile.radius * 0.8, tailY + dirY * projectile.radius * 0.8);
-      ctx.lineTo(projectile.x, projectile.y);
+      ctx.lineTo(headX, headY);
       ctx.stroke();
 
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = bulletColor;
-      ctx.beginPath();
-      ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
+      ctx.globalAlpha = 0.98;
+      ctx.fillStyle = COLORS.blockShadow;
+      roundedRect(ctx, headX - blockSize / 2 + 2, headY - blockSize / 2 + 3, blockSize, blockSize, 6);
       ctx.fill();
-
-      ctx.fillStyle = bulletCoreColor;
-      ctx.beginPath();
-      ctx.arc(projectile.x, projectile.y, projectile.radius * 0.45, 0, Math.PI * 2);
-      ctx.fill();
+      if (blockSprite) {
+        ctx.drawImage(blockSprite, headX - blockSize / 2, headY - blockSize / 2, blockSize, blockSize);
+      } else {
+        ctx.fillStyle = bulletCoreColor;
+        roundedRect(ctx, headX - blockSize / 2, headY - blockSize / 2, blockSize, blockSize, 6);
+        ctx.fill();
+      }
       ctx.restore();
     }
   }
@@ -1696,8 +1772,8 @@ class Game {
       remainingBlocks: this.remainingBlocks,
       blocksTotal: this.blocks.length,
       blocksByColor: {
-        green: this.blocks.filter((block) => block.alive && block.color === "green").length,
-        black: this.blocks.filter((block) => block.alive && block.color === "black").length,
+        green: this.blocks.filter((block) => !block.alive && block.color === "green").length,
+        black: this.blocks.filter((block) => !block.alive && block.color === "black").length,
       },
       units: this.units.map((unit) => ({
         id: unit.id,
