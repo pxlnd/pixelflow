@@ -1,32 +1,114 @@
-const LOGICAL_WIDTH = 390;
-const LOGICAL_HEIGHT = 844;
+const LOGICAL_WIDTH = 1024;
+const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
+const MAX_ACTIVE_UNITS = 4;
+const FIRE_INTERVAL = 0.07;
+const BULLET_SPEED = 1860;
+const BULLET_RADIUS = 8;
+const BULLET_TRAIL_LENGTH = 32;
+const SHOOTER_PIG_SIZE = 117;
+const SHOOTER_HIT_RADIUS = 74;
+const CARD_HITBOX_PADDING_X = 26;
+const CARD_HITBOX_PADDING_TOP = 26;
+const CARD_HITBOX_PADDING_BOTTOM = 22;
+const PARKED_UNIT_TAP_RADIUS = 70;
+const SHOW_TAP_DEBUG = false;
+const SPAWN_CLEAR_RADIUS = 118;
+const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
+const REFERENCE_FIELD_X = 220;
+const REFERENCE_FIELD_Y = 216;
+const REFERENCE_FIELD_STEP = 32;
+const REFERENCE_CELL_SIZE = 30;
+const BOARD_FILL_COLOR = "#6aa93a";
+const FIELD_UNDERLAY_COLOR = "#6fb53f";
+const SHOOTER_CARD_Y_OFFSET = 132;
+const SHOOTER_SLOT_Y_OFFSET = 28;
+
+const LAYOUT = {
+  fieldX: 220,
+  fieldY: 196,
+  fieldStep: 32,
+  cellSize: 32,
+  fieldCols: 18,
+  fieldRows: 18,
+  track: {
+    x: 96,
+    y: 126,
+    w: 828,
+    h: 876,
+    r: 52,
+  },
+  spawnPoint: { x: 152, y: 936 },
+  cards: [
+    { lane: 0, row: 0, x: 320, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "green", ammo: 40 },
+    { lane: 1, row: 0, x: 560, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "black", ammo: 40 },
+    { lane: 0, row: 1, x: 320, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "green", ammo: 40 },
+    { lane: 1, row: 1, x: 560, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "black", ammo: 40 },
+  ],
+  slots: [
+    { x: 107, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 177, h: 105 },
+    { x: 320, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 176, h: 105 },
+    { x: 529, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 176, h: 105 },
+    { x: 738, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 177, h: 105 },
+  ],
+  wagonSprite: {
+    x: 44,
+    y: 840,
+    w: 148,
+    h: 116,
+    anchorX: 52,
+    anchorY: 96,
+    seatOffsetX: 0,
+    seatOffsetY: -52,
+  },
+  wagonMask: {
+    x: 0,
+    y: 820,
+    w: 260,
+    h: 200,
+  },
+  boardMask: {
+    x: 30,
+    y: 44,
+    w: 964,
+    h: 968,
+    r: 78,
+  },
+};
+
+const FALLBACK_FIELD_PATTERN = [
+  "GGGGGGGGGGGGGGGGGG",
+  "GGGGGGGGGGGGGGGGGG",
+  "GGGGGGGGGGGGGGGGGG",
+  "GGGGGGGGGGGGGGGGGG",
+  "GGBBBBGGGGGGBBBBGG",
+  "GGBBBBGGGGGGBBBBGG",
+  "GGBBBBGGGGGGBBBBGG",
+  "GGBBBBGGGGGGBBBBGG",
+  "GGGGGGBBBBBBGGGGGG",
+  "GGGGGGBBBBBBGGGGGG",
+  "GGGGBBBBBBBBBBGGGG",
+  "GGGGBBBBBBBBBBGGGG",
+  "GGGGBBBBBBBBBBGGGG",
+  "GGGGBBBBBBBBBBGGGG",
+  "GGGGBBGGGGGGBBGGGG",
+  "GGGGBBGGGGGGBBGGGG",
+  "GGGGGGGGGGGGGGGGGG",
+  "GGGGGGGGGGGGGGGGGG",
+];
 
 const COLORS = {
-  bgTop: "#6d7096",
-  bgBottom: "#4c506d",
-  frame: "#686d92",
-  frameEdge: "#ddeaff",
-  panel: "#5f6489",
-  panelInner: "#555978",
-  track: "#767ca2",
-  trackShadow: "#5a607f",
-  trackArrow: "rgba(255,255,255,0.11)",
-  text: "#ffffff",
-  subtext: "#dde4ff",
-  darkText: "#272942",
-  pink: "#ff74cd",
-  pinkDark: "#d84db0",
-  cyan: "#85efff",
-  cyanDark: "#58d5ee",
-  slot: "#414564",
-  slotEdge: "#2f3350",
-  cardShadow: "rgba(14, 17, 30, 0.35)",
-  gold: "#ffcb52",
-  goldDark: "#e4a52f",
-  shadow: "rgba(18, 20, 38, 0.35)",
-  overlay: "rgba(12, 14, 27, 0.52)",
-  blast: "#fff5c5",
+  white: "#ffffff",
+  shadow: "rgba(0, 0, 0, 0.55)",
+  usedOverlay: "rgba(13, 15, 16, 0.56)",
+  badgeBg: "rgba(17, 20, 26, 0.85)",
+  bulletGreen: "#dcffc2",
+  bulletGreenCore: "#7ede55",
+  bulletBlack: "#d8d8d8",
+  bulletBlackCore: "#222222",
+  particleGreen: "#8fe266",
+  particleBlack: "#161616",
+  clearedGround: "#3f3b37",
 };
 
 function clamp(value, min, max) {
@@ -35,6 +117,10 @@ function clamp(value, min, max) {
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function isInsideRect(x, y, rect) {
+  return x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h;
 }
 
 function roundedRect(ctx, x, y, w, h, r) {
@@ -48,39 +134,7 @@ function roundedRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawGlossyPill(ctx, x, y, w, h, colors, text, textSize) {
-  const gradient = ctx.createLinearGradient(x, y, x, y + h);
-  gradient.addColorStop(0, colors[0]);
-  gradient.addColorStop(1, colors[1]);
-
-  ctx.save();
-  roundedRect(ctx, x, y, w, h, h / 2);
-  ctx.fillStyle = gradient;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(31, 39, 62, 0.65)";
-  ctx.stroke();
-
-  const shine = ctx.createLinearGradient(x, y, x, y + h * 0.6);
-  shine.addColorStop(0, "rgba(255,255,255,0.34)");
-  shine.addColorStop(1, "rgba(255,255,255,0)");
-  roundedRect(ctx, x + 2, y + 2, w - 4, h * 0.48, h / 2);
-  ctx.fillStyle = shine;
-  ctx.fill();
-
-  ctx.fillStyle = COLORS.text;
-  ctx.strokeStyle = "rgba(28, 31, 49, 0.9)";
-  ctx.lineWidth = 5;
-  ctx.lineJoin = "round";
-  ctx.font = `800 ${textSize}px Trebuchet MS, Verdana, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.strokeText(text, x + w / 2, y + h / 2 + 1);
-  ctx.fillText(text, x + w / 2, y + h / 2 + 1);
-  ctx.restore();
-}
-
-function createRoundedRectPath(x, y, w, h, r, spawnYOffset = 66, samplesPerArc = 14) {
+function createRoundedRectPath(x, y, w, h, r, samplesPerArc = 18) {
   const points = [];
   const pushPoint = (px, py) => {
     const last = points[points.length - 1];
@@ -102,66 +156,39 @@ function createRoundedRectPath(x, y, w, h, r, spawnYOffset = 66, samplesPerArc =
     }
   };
 
-  const spawnY = y + h - r - spawnYOffset;
-  pushLine(x, spawnY, x, y + h - r, 8);
-  pushArc(x + r, y + h - r, r, Math.PI, Math.PI / 2, samplesPerArc);
-  pushLine(x + r, y + h, x + w - r, y + h, 24);
-  pushArc(x + w - r, y + h - r, r, Math.PI / 2, 0, samplesPerArc);
-  pushLine(x + w, y + h - r, x + w, y + r, 20);
-  pushArc(x + w - r, y + r, r, 0, -Math.PI / 2, samplesPerArc);
-  pushLine(x + w - r, y, x + r, y, 24);
-  pushArc(x + r, y + r, r, -Math.PI / 2, -Math.PI, samplesPerArc);
-  pushLine(x, y + r, x, spawnY, 18);
+  pushLine(x + r, y, x + w - r, y, 32);
+  pushArc(x + w - r, y + r, r, -Math.PI / 2, 0, samplesPerArc);
+  pushLine(x + w, y + r, x + w, y + h - r, 32);
+  pushArc(x + w - r, y + h - r, r, 0, Math.PI / 2, samplesPerArc);
+  pushLine(x + w - r, y + h, x + r, y + h, 32);
+  pushArc(x + r, y + h - r, r, Math.PI / 2, Math.PI, samplesPerArc);
+  pushLine(x, y + h - r, x, y + r, 32);
+  pushArc(x + r, y + r, r, Math.PI, Math.PI * 1.5, samplesPerArc);
+
   return points;
 }
 
 class Block {
-  constructor(id, gridX, gridY, color, metrics) {
+  constructor(id, col, row, color) {
     this.id = id;
-    this.gridX = gridX;
-    this.gridY = gridY;
+    this.col = col;
+    this.row = row;
     this.color = color;
-    this.hp = 1;
     this.alive = true;
     this.hitFlash = 0;
-    const step = metrics.cellSize + metrics.cellGap;
-    this.x = metrics.fieldX + this.gridX * step;
-    this.y = metrics.fieldY + this.gridY * step;
+    this.x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
+    this.y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
+    this.size = LAYOUT.cellSize;
   }
 
   update(dt) {
     this.hitFlash = Math.max(0, this.hitFlash - dt * 5);
   }
-
-  draw(ctx, metrics) {
-    if (!this.alive) {
-      return;
-    }
-
-    const sprite = metrics.blockSprites[this.color];
-    ctx.drawImage(sprite, this.x, this.y - 2);
-
-    if (this.hitFlash > 0) {
-      const size = metrics.cellSize;
-      ctx.save();
-      ctx.fillStyle = `rgba(255,255,255,${this.hitFlash * 0.55})`;
-      roundedRect(ctx, this.x, this.y - 2, size, size - 2, 4);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
 }
 
 class Conveyor {
-  constructor(layout) {
-    this.layout = layout;
-    this.trackRect = {
-      x: layout.trackX,
-      y: layout.trackY,
-      w: layout.trackW,
-      h: layout.trackH,
-      r: 34,
-    };
+  constructor() {
+    this.trackRect = { ...LAYOUT.track };
     this.path = createRoundedRectPath(
       this.trackRect.x,
       this.trackRect.y,
@@ -171,106 +198,73 @@ class Conveyor {
     );
     this.totalLength = 0;
     this.segmentLengths = [];
-    this.cumulativeLengths = [0];
-
-    for (let i = 0; i < this.path.length - 1; i++) {
-      const segLength = distance(this.path[i], this.path[i + 1]);
-      this.segmentLengths.push(segLength);
-      this.totalLength += segLength;
-      this.cumulativeLengths.push(this.totalLength);
+    for (let i = 0; i < this.path.length; i++) {
+      const a = this.path[i];
+      const b = this.path[(i + 1) % this.path.length];
+      const segmentLength = distance(a, b);
+      this.segmentLengths.push(segmentLength);
+      this.totalLength += segmentLength;
     }
-    const closingLength = distance(this.path[this.path.length - 1], this.path[0]);
-    this.segmentLengths.push(closingLength);
-    this.totalLength += closingLength;
-    this.cumulativeLengths.push(this.totalLength);
-
-    this.spawnDistance = 0;
-    this.slotCount = 5;
-    this.slots = [];
-    const slotY = layout.slotY + layout.slotH / 2 + 2;
-
-    for (let i = 0; i < this.slotCount; i++) {
-      const x = layout.slotX + i * (layout.slotW + layout.slotGap) + layout.slotW / 2;
-      const y = slotY;
-      this.slots.push({
-        x,
-        y,
-        occupiedBy: null,
-        dockDistance: 0,
-      });
-    }
-
-    for (const slot of this.slots) {
-      slot.dockDistance = this.closestPathDistance({
-        x: slot.x,
-        y: this.trackRect.y + this.trackRect.h,
-      });
-    }
+    this.spawnDistance = this.closestPathDistance(LAYOUT.spawnPoint);
   }
 
-  pointAtDistance(distanceOnTrack) {
-    let distanceLeft = ((distanceOnTrack % this.totalLength) + this.totalLength) % this.totalLength;
-
+  pointAtDistance(trackDistance) {
+    let d = ((trackDistance % this.totalLength) + this.totalLength) % this.totalLength;
     for (let i = 0; i < this.segmentLengths.length; i++) {
-      const segLength = this.segmentLengths[i];
-      if (distanceLeft <= segLength || i === this.segmentLengths.length - 1) {
+      const len = this.segmentLengths[i];
+      if (d <= len || i === this.segmentLengths.length - 1) {
         const a = this.path[i];
         const b = this.path[(i + 1) % this.path.length];
-        const t = segLength === 0 ? 0 : distanceLeft / segLength;
+        const t = len === 0 ? 0 : d / len;
         return {
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
         };
       }
-      distanceLeft -= segLength;
+      d -= len;
     }
-
     return { ...this.path[0] };
-  }
-
-  firstFreeSlot() {
-    return this.slots.find((slot) => slot.occupiedBy === null) || null;
   }
 
   closestPathDistance(point) {
     let bestDistance = 0;
     let bestScore = Infinity;
+    let traveled = 0;
 
     for (let i = 0; i < this.path.length; i++) {
-      const pathPoint = this.path[i];
-      const score = Math.hypot(point.x - pathPoint.x, point.y - pathPoint.y);
+      const p = this.path[i];
+      const score = Math.hypot(point.x - p.x, point.y - p.y);
       if (score < bestScore) {
         bestScore = score;
-        bestDistance = this.cumulativeLengths[i] || 0;
+        bestDistance = traveled;
       }
+      traveled += this.segmentLengths[i];
     }
 
     return bestDistance;
   }
-
-  hasPassedDock(prevDistance, currentDistance, dockDistance) {
-    const baseLap = Math.floor(prevDistance / this.totalLength);
-    let targetDistance = dockDistance + baseLap * this.totalLength;
-    if (targetDistance <= prevDistance) {
-      targetDistance += this.totalLength;
-    }
-    return currentDistance >= targetDistance;
-  }
 }
 
 class Unit {
-  constructor(id, color, ammo, conveyor) {
+  constructor(id, color, ammo, launchFrom, conveyor) {
     this.id = id;
     this.color = color;
     this.ammo = ammo;
     this.maxAmmo = ammo;
-    this.speed = 310;
+    this.slotIndex = null;
+    this.speed = 1260;
     this.cooldown = 0;
+    this.state = "launching";
+    this.launchFrom = { ...launchFrom };
+    this.conveyor = conveyor;
+    this.launchTo = conveyor.pointAtDistance(conveyor.spawnDistance);
+    this.landFrom = { ...this.launchTo };
+    this.landTo = null;
+    this.launchProgress = 0;
+    this.landProgress = 0;
     this.loopDistance = 0;
     this.distanceOnTrack = conveyor.spawnDistance;
-    this.state = "moving";
-    this.slotIndex = -1;
-    this.position = conveyor.pointAtDistance(this.distanceOnTrack);
+    this.position = { ...launchFrom };
     this.alive = true;
   }
 
@@ -279,327 +273,907 @@ class Unit {
       return;
     }
 
-    if (this.state === "moving") {
-      const previousDistance = this.distanceOnTrack;
-      const delta = this.speed * dt;
-      this.loopDistance += delta;
-      this.distanceOnTrack += delta;
-      this.position = game.conveyor.pointAtDistance(this.distanceOnTrack);
-
-      if (this.loopDistance >= game.conveyor.totalLength) {
-        const slot = game.conveyor.firstFreeSlot();
-        if (slot && game.conveyor.hasPassedDock(previousDistance, this.distanceOnTrack, slot.dockDistance)) {
-          slot.occupiedBy = this.id;
-          this.state = "slotted";
-          this.slotIndex = game.conveyor.slots.indexOf(slot);
-          this.position = { x: slot.x, y: slot.y };
-        }
+    if (this.state === "launching") {
+      this.launchProgress = Math.min(1, this.launchProgress + dt / 0.22);
+      this.position = {
+        x: this.launchFrom.x + (this.launchTo.x - this.launchFrom.x) * this.launchProgress,
+        y: this.launchFrom.y + (this.launchTo.y - this.launchFrom.y) * this.launchProgress,
+      };
+      if (this.launchProgress >= 1) {
+        this.state = "moving";
+        this.position = this.conveyor.pointAtDistance(this.distanceOnTrack);
+        game.normalizeShooterQueues(game.cards);
       }
-    } else if (this.state === "slotted") {
-      const slot = game.conveyor.slots[this.slotIndex];
-      if (slot) {
-        this.position = { x: slot.x, y: slot.y };
-      }
-    }
-
-    this.cooldown = Math.max(0, this.cooldown - dt);
-
-    if (this.state === "moving" && this.ammo > 0 && this.cooldown <= 0) {
-      const target = game.findTarget(this);
-      if (target) {
-        this.cooldown = 0.2;
-        this.ammo -= 1;
-        game.fireProjectile(target, this);
-        if (this.ammo <= 0) {
-          this.destroy(game);
-        }
-      }
-    } else if (this.ammo <= 0) {
-      this.destroy(game);
-    }
-  }
-
-  destroy(game) {
-    if (!this.alive) {
       return;
     }
 
-    this.alive = false;
-    if (this.slotIndex >= 0) {
-      const slot = game.conveyor.slots[this.slotIndex];
-      if (slot && slot.occupiedBy === this.id) {
-        slot.occupiedBy = null;
+    if (this.state === "landing") {
+      this.landProgress = Math.min(1, this.landProgress + dt / 0.2);
+      this.position = {
+        x: this.landFrom.x + (this.landTo.x - this.landFrom.x) * this.landProgress,
+        y: this.landFrom.y + (this.landTo.y - this.landFrom.y) * this.landProgress,
+      };
+      if (this.landProgress >= 1) {
+        this.state = "parked";
+        this.position = { ...this.landTo };
+      }
+      return;
+    }
+
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    if (game.gameState !== "playing") {
+      this.alive = false;
+      if (this.slotIndex !== null) {
+        game.freeSlot(this.slotIndex, this.id);
+      }
+      return;
+    }
+
+    if (this.ammo <= 0) {
+      this.alive = false;
+      if (this.slotIndex !== null) {
+        game.freeSlot(this.slotIndex, this.id);
+      }
+      return;
+    }
+
+    if (this.state === "moving") {
+      const delta = this.speed * dt;
+      this.loopDistance += delta;
+      this.distanceOnTrack -= delta;
+      this.position = this.conveyor.pointAtDistance(this.distanceOnTrack);
+
+      if (this.loopDistance >= game.conveyor.totalLength) {
+        const freeSlotIndex = game.claimFreeSlot(this.id);
+        if (freeSlotIndex === null) {
+          this.alive = false;
+          return;
+        }
+        this.slotIndex = freeSlotIndex;
+        this.landTo = game.getSlotCenter(freeSlotIndex);
+        this.landFrom = { ...this.position };
+        this.landProgress = 0;
+        this.state = "landing";
+        return;
       }
     }
+
+    if (this.state !== "moving") {
+      return;
+    }
+
+    if (this.cooldown > 0) {
+      return;
+    }
+
+    const shootDirection = game.getInwardShootDirection(this.position);
+    const target = shootDirection ? game.findTargetOnLine(this.position, this.color, shootDirection) : null;
+    if (!target) {
+      return;
+    }
+
+    this.cooldown = FIRE_INTERVAL;
+    this.ammo -= 1;
+    game.fireProjectile(this, target);
   }
 }
 
-class Level {
-  constructor(blocks, metrics) {
-    this.blocks = blocks;
-    this.metrics = metrics;
+class SlotManager {
+  constructor(slots, claimOrder = []) {
+    this.slots = slots;
+    this.claimOrder = claimOrder.length ? [...claimOrder] : slots.map((_, index) => index);
+    this.occupants = Array(slots.length).fill(null);
   }
 
-  aliveBlocks() {
-    return this.blocks.filter((block) => block.alive);
+  reset() {
+    this.occupants = Array(this.slots.length).fill(null);
+  }
+
+  claim(unitId) {
+    for (const index of this.claimOrder) {
+      if (index < 0 || index >= this.occupants.length) {
+        continue;
+      }
+      if (this.occupants[index] === null) {
+        this.occupants[index] = unitId;
+        return index;
+      }
+    }
+    return null;
+  }
+
+  free(slotIndex, unitId) {
+    if (slotIndex === null || slotIndex === undefined) {
+      return;
+    }
+    if (slotIndex < 0 || slotIndex >= this.occupants.length) {
+      return;
+    }
+    if (this.occupants[slotIndex] === unitId) {
+      this.occupants[slotIndex] = null;
+    }
+  }
+
+  getCenter(slotIndex) {
+    const slot = this.slots[slotIndex];
+    if (!slot) {
+      return null;
+    }
+    return {
+      x: slot.x + slot.w * 0.5,
+      y: slot.y + slot.h * 0.5 + 10,
+    };
+  }
+}
+
+class CardManager {
+  constructor(cardLayouts) {
+    this.cardLayouts = cardLayouts.map((card) => ({ ...card }));
+    this.cards = [];
+  }
+
+  resetFromBlocks(blocks) {
+    this.cards = this.createFromBlocks(blocks);
+    return this.cards;
+  }
+
+  createFromBlocks(blocks) {
+    const colorCounts = blocks.reduce((acc, block) => {
+      acc[block.color] = (acc[block.color] || 0) + 1;
+      return acc;
+    }, {});
+
+    const cards = this.cardLayouts.map((card, index) => ({
+      ...card,
+      index,
+      ammo: 0,
+      used: false,
+    }));
+
+    const cardIndexesByColor = cards.reduce((acc, card, index) => {
+      if (!acc[card.color]) {
+        acc[card.color] = [];
+      }
+      acc[card.color].push(index);
+      return acc;
+    }, {});
+
+    for (const [color, indexes] of Object.entries(cardIndexesByColor)) {
+      const total = colorCounts[color] || 0;
+      if (indexes.length === 0 || total <= 0) {
+        continue;
+      }
+      const base = Math.floor(total / indexes.length);
+      const remainder = total % indexes.length;
+      indexes.forEach((cardIndex, i) => {
+        cards[cardIndex].ammo = base + (i < remainder ? 1 : 0);
+      });
+    }
+
+    for (const card of cards) {
+      if (card.ammo <= 0) {
+        card.used = true;
+      }
+    }
+
+    return this.normalizeQueues(cards);
+  }
+
+  getCardLayout(lane, row) {
+    return this.cardLayouts.find((card) => card.lane === lane && card.row === row) || null;
+  }
+
+  normalizeQueues(cards) {
+    const lanes = [...new Set(cards.map((card) => card.lane))];
+    for (const lane of lanes) {
+      const frontLayout = this.getCardLayout(lane, 0);
+      if (!frontLayout) {
+        continue;
+      }
+      const frontCard = cards.find((card) => card.lane === lane && card.row === 0 && !card.used);
+      if (frontCard) {
+        frontCard.x = frontLayout.x;
+        frontCard.y = frontLayout.y;
+        frontCard.w = frontLayout.w;
+        frontCard.h = frontLayout.h;
+        continue;
+      }
+      const rearCard = cards.find((card) => card.lane === lane && card.row === 1 && !card.used);
+      if (!rearCard) {
+        continue;
+      }
+      rearCard.row = 0;
+      rearCard.x = frontLayout.x;
+      rearCard.y = frontLayout.y;
+      rearCard.w = frontLayout.w;
+      rearCard.h = frontLayout.h;
+    }
+    this.cards = cards;
+    return cards;
+  }
+
+  isFrontRowCard(card) {
+    return !!card && card.row === 0 && !card.used;
+  }
+
+  getFrontLaneIds() {
+    return [...new Set(this.cardLayouts.map((card) => card.lane))];
+  }
+
+  getActiveFrontCardInLane(lane) {
+    return this.cards.find((card) => card.lane === lane && this.isFrontRowCard(card)) || null;
+  }
+
+  getCardPigCenter(card) {
+    return {
+      x: card.x + card.w / 2,
+      y: card.y + card.h / 2 + 8,
+    };
+  }
+
+  getCardBadgeRect(card) {
+    const center = this.getCardPigCenter(card);
+    const badgeY = card.y + card.h - 16;
+    return {
+      x: center.x - 38,
+      y: badgeY - 13,
+      w: 76,
+      h: 24,
+    };
+  }
+
+  isPointOnCard(card, x, y) {
+    const center = this.getCardPigCenter(card);
+    const onPig = Math.hypot(x - center.x, y - center.y) <= SHOOTER_HIT_RADIUS;
+    return onPig;
+  }
+
+  findTapTarget(x, y) {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const lane of this.getFrontLaneIds()) {
+      const activeCard = this.getActiveFrontCardInLane(lane);
+      if (!activeCard || !this.isPointOnCard(activeCard, x, y)) {
+        continue;
+      }
+      const center = this.getCardPigCenter(activeCard);
+      const score = Math.hypot(x - center.x, y - center.y);
+      if (score < bestDistance) {
+        bestDistance = score;
+        best = activeCard;
+      }
+    }
+    return best;
   }
 }
 
 class Game {
   constructor(canvas) {
     this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
-    this.dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    this.ctx = canvas.getContext("2d", { alpha: false });
     this.width = LOGICAL_WIDTH;
     this.height = LOGICAL_HEIGHT;
-    this.lastTimestamp = 0;
-    this.unitIdCounter = 0;
-    this.projectiles = [];
-    this.particles = [];
-    this.pointer = { x: 0, y: 0 };
-    this.hoverHotspot = null;
-    this.needsRender = true;
-    this.isLoopRunning = false;
-    this.staticLayer = document.createElement("canvas");
-    this.staticCtx = this.staticLayer.getContext("2d");
-    this.spriteCache = new Map();
+    this.dpr = 1;
 
-    this.layout = this.createLayout();
-    this.restart();
-    this.resize();
-    this.bindEvents();
-  }
+    this.referenceImage = new Image();
+    this.referenceImage.src = "Ref.png";
+    this.referenceImage.decoding = "sync";
 
-  createLayout() {
-    return {
-      topBarY: 24,
-      boardPanel: { x: 18, y: 74, w: 354, h: 520, r: 30 },
-      boardInner: { x: 40, y: 110, w: 312, h: 366, r: 24 },
-      trackX: 28,
-      trackY: 104,
-      trackW: 334,
-      trackH: 462,
-      fieldX: 82,
-      fieldY: 174,
-      fieldSize: 224,
-      cellSize: 20,
-      cellGap: 2,
-      slotX: 44,
-      slotY: 602,
-      slotW: 54,
-      slotH: 50,
-      slotGap: 10,
-      trayY: 684,
-      trayCardW: 60,
-      trayCardH: 60,
-      trayGapX: 20,
-      trayGapY: 10,
-      trayStartX: 115,
-      restartRect: { x: 272, y: 502, w: 74, h: 30 },
-      spawnDecor: { x: 2, y: 420, w: 30, h: 52 },
+    this.referenceLayer = document.createElement("canvas");
+    this.referenceLayer.width = this.width;
+    this.referenceLayer.height = this.height;
+    this.referenceCtx = this.referenceLayer.getContext("2d", { alpha: false });
+
+    this.referencePixels = null;
+    this.sprites = {
+      holeTile: null,
+      greenTile: null,
+      blackTile: null,
+      fieldGround: null,
+      wagon: null,
+      wagonMask: null,
+      grassTile: null,
     };
-  }
 
-  createLevel() {
-    const pattern = [
-      "PPPPPCCCCC",
-      "PPPPPCCCCC",
-      "PPPPPCCCCC",
-      "PPP....CCC",
-      "PPP....CCC",
-      "PPP....CCC",
-      "PPP....CCC",
-      "PPPPPCCCCC",
-      "PPPPPCCCCC",
-      "PPPPPCCCCC",
-    ];
-    const blocks = [];
-    let blockId = 0;
-
-    for (let row = 0; row < pattern.length; row++) {
-      for (let col = 0; col < pattern[row].length; col++) {
-        const token = pattern[row][col];
-        if (token === ".") {
-          continue;
-        }
-        blockId += 1;
-        blocks.push(new Block(blockId, col, row, token === "P" ? "pink" : "cyan", {
-          fieldX: this.layout.fieldX,
-          fieldY: this.layout.fieldY,
-          cellSize: this.layout.cellSize,
-          cellGap: this.layout.cellGap,
-        }));
-      }
-    }
-
-    return new Level(blocks, {
-      fieldX: this.layout.fieldX,
-      fieldY: this.layout.fieldY,
-      cellSize: this.layout.cellSize,
-      cellGap: this.layout.cellGap,
-      blockSprites: {
-        pink: this.getBlockSprite("pink"),
-        cyan: this.getBlockSprite("cyan"),
-      },
-    });
-  }
-
-  createConveyor() {
-    return new Conveyor(this.layout);
-  }
-
-  createShooterCards() {
-    const cards = [
-      { color: "pink", ammo: 40, used: false },
-      { color: "cyan", ammo: 40, used: false },
-      { color: "pink", ammo: 10, used: false },
-      { color: "cyan", ammo: 10, used: false },
-      { color: "pink", ammo: 10, used: false },
-      { color: "cyan", ammo: 10, used: false },
-    ];
-
-    return cards.map((card, index) => {
-      const customPositions = [
-        { x: 126, y: 652 },
-        { x: 204, y: 652 },
-        { x: 126, y: 718 },
-        { x: 204, y: 718 },
-        { x: 126, y: 784 },
-        { x: 204, y: 784 },
-      ];
-      const position = customPositions[index];
-      return {
-        ...card,
-        x: position.x,
-        y: position.y,
-        w: this.layout.trayCardW,
-        h: this.layout.trayCardH,
-      };
-    });
-  }
-
-  restart() {
-    this.level = this.createLevel();
-    this.conveyor = this.createConveyor();
+    this.conveyor = new Conveyor();
+    this.blocks = [];
     this.units = [];
     this.projectiles = [];
     this.particles = [];
-    this.shooterCards = this.createShooterCards();
+    this.cardManager = new CardManager(LAYOUT.cards);
+    this.slotManager = new SlotManager(LAYOUT.slots, SLOT_CLAIM_ORDER);
+    this.cards = [];
+    this.wagon = {
+      x: LAYOUT.spawnPoint.x,
+      y: LAYOUT.spawnPoint.y,
+      distance: 0,
+      color: null,
+      moving: false,
+    };
+
+    this.gameState = "loading";
+    this.remainingBlocks = 0;
+    this.hoverHotspot = null;
+    this.lastTimestamp = 0;
+    this.needsRender = true;
+    this.isLoopRunning = false;
+    this.unitIdCounter = 0;
+
+    this.bindEvents();
+    this.resize();
+
+    this.referenceImage.onload = () => {
+      this.buildReferenceAssets();
+      this.restart();
+    };
+
+    this.referenceImage.onerror = () => {
+      this.gameState = "error";
+      this.invalidate(false);
+    };
+
+    if (this.referenceImage.complete) {
+      this.buildReferenceAssets();
+      this.restart();
+    }
+  }
+
+  buildReferenceAssets() {
+    this.referenceCtx.imageSmoothingEnabled = false;
+    this.referenceCtx.clearRect(0, 0, this.width, this.height);
+    this.referenceCtx.drawImage(this.referenceImage, 0, 0, this.width, this.height);
+    try {
+      this.referencePixels = this.referenceCtx.getImageData(0, 0, this.width, this.height).data;
+    } catch {
+      // file:// loads can taint canvas and block getImageData; use fallback field pattern.
+      this.referencePixels = null;
+    }
+
+    const colorGrid = [];
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      colorGrid[row] = [];
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        colorGrid[row][col] = this.getCellColor(col, row);
+      }
+    }
+
+    const findSample = (targetColor, fallback) => {
+      const isInside = (col, row) =>
+        col > 0 && row > 0 && col < LAYOUT.fieldCols - 1 && row < LAYOUT.fieldRows - 1;
+
+      for (let row = 0; row < LAYOUT.fieldRows; row++) {
+        for (let col = 0; col < LAYOUT.fieldCols; col++) {
+          if (colorGrid[row][col] !== targetColor || !isInside(col, row)) {
+            continue;
+          }
+          if (
+            colorGrid[row - 1][col] === targetColor &&
+            colorGrid[row + 1][col] === targetColor &&
+            colorGrid[row][col - 1] === targetColor &&
+            colorGrid[row][col + 1] === targetColor
+          ) {
+            return { col, row };
+          }
+        }
+      }
+
+      for (let row = 0; row < LAYOUT.fieldRows; row++) {
+        for (let col = 0; col < LAYOUT.fieldCols; col++) {
+          if (colorGrid[row][col] === targetColor) {
+            return { col, row };
+          }
+        }
+      }
+
+      return fallback;
+    };
+
+    const greenSample = findSample("green", { col: 0, row: 0 });
+    const blackSample = findSample("black", { col: 1, row: 2 });
+
+    this.sprites.greenTile = this.sliceSprite(
+      REFERENCE_FIELD_X + greenSample.col * REFERENCE_FIELD_STEP + 1,
+      REFERENCE_FIELD_Y + greenSample.row * REFERENCE_FIELD_STEP + 1,
+      REFERENCE_CELL_SIZE,
+      REFERENCE_CELL_SIZE
+    );
+    this.sprites.blackTile = this.suppressGreenTint(this.sliceSprite(
+      REFERENCE_FIELD_X + blackSample.col * REFERENCE_FIELD_STEP + 1,
+      REFERENCE_FIELD_Y + blackSample.row * REFERENCE_FIELD_STEP + 1,
+      REFERENCE_CELL_SIZE,
+      REFERENCE_CELL_SIZE
+    ));
+    this.sprites.holeTile = this.sliceSprite(
+      REFERENCE_FIELD_X + REFERENCE_FIELD_STEP * 3 + 1,
+      REFERENCE_FIELD_Y + REFERENCE_FIELD_STEP * LAYOUT.fieldRows + 24,
+      REFERENCE_CELL_SIZE,
+      REFERENCE_CELL_SIZE
+    );
+    this.sprites.fieldGround = this.makeTileSeamless(this.suppressGreenTint(this.sliceSprite(
+      REFERENCE_FIELD_X + REFERENCE_FIELD_STEP * 3 + 1,
+      REFERENCE_FIELD_Y + REFERENCE_FIELD_STEP * LAYOUT.fieldRows + 24,
+      96,
+      96
+    ), { minGreen: 30, deltaR: 3, deltaB: 3 }));
+    this.sprites.wagon = this.sliceSprite(
+      LAYOUT.wagonSprite.x,
+      LAYOUT.wagonSprite.y,
+      LAYOUT.wagonSprite.w,
+      LAYOUT.wagonSprite.h
+    );
+    this.sprites.wagonMask = this.buildMirroredPatch(
+      LAYOUT.wagonMask.x,
+      LAYOUT.wagonMask.y,
+      LAYOUT.wagonMask.w,
+      LAYOUT.wagonMask.h
+    );
+    this.sprites.grassTile = this.makeTileSeamless(this.sliceSprite(12, 12, 96, 96));
+  }
+
+  sliceSprite(x, y, w, h) {
+    const sprite = document.createElement("canvas");
+    sprite.width = w;
+    sprite.height = h;
+    const spriteCtx = sprite.getContext("2d", { alpha: true });
+    spriteCtx.imageSmoothingEnabled = false;
+    spriteCtx.drawImage(this.referenceLayer, x, y, w, h, 0, 0, w, h);
+    return sprite;
+  }
+
+  suppressGreenTint(sprite, options = {}) {
+    if (!sprite) {
+      return sprite;
+    }
+    const minGreen = options.minGreen ?? 80;
+    const deltaR = options.deltaR ?? 16;
+    const deltaB = options.deltaB ?? 12;
+    const spriteCtx = sprite.getContext("2d", { alpha: true });
+    if (!spriteCtx) {
+      return sprite;
+    }
+    let imageData;
+    try {
+      imageData = spriteCtx.getImageData(0, 0, sprite.width, sprite.height);
+    } catch {
+      return sprite;
+    }
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const a = data[i + 3];
+      if (a === 0) {
+        continue;
+      }
+      if (g > minGreen && g - r > deltaR && g - b > deltaB) {
+        const dark = Math.max(18, Math.min(92, Math.round((r + b) * 0.45)));
+        data[i] = dark;
+        data[i + 1] = dark;
+        data[i + 2] = dark;
+      }
+    }
+    spriteCtx.putImageData(imageData, 0, 0);
+    return sprite;
+  }
+
+  makeTileSeamless(sprite) {
+    if (!sprite) {
+      return sprite;
+    }
+    const spriteCtx = sprite.getContext("2d", { alpha: true });
+    if (!spriteCtx || sprite.width < 2 || sprite.height < 2) {
+      return sprite;
+    }
+    let imageData;
+    try {
+      imageData = spriteCtx.getImageData(0, 0, sprite.width, sprite.height);
+    } catch {
+      return sprite;
+    }
+
+    const data = imageData.data;
+    const w = sprite.width;
+    const h = sprite.height;
+    const copyPixel = (srcX, srcY, dstX, dstY) => {
+      const src = (srcY * w + srcX) * 4;
+      const dst = (dstY * w + dstX) * 4;
+      data[dst] = data[src];
+      data[dst + 1] = data[src + 1];
+      data[dst + 2] = data[src + 2];
+      data[dst + 3] = data[src + 3];
+    };
+
+    for (let y = 0; y < h; y++) {
+      copyPixel(0, y, w - 1, y);
+    }
+    for (let x = 0; x < w; x++) {
+      copyPixel(x, 0, x, h - 1);
+    }
+    copyPixel(0, 0, w - 1, h - 1);
+
+    spriteCtx.putImageData(imageData, 0, 0);
+    return sprite;
+  }
+
+  buildMirroredPatch(destX, destY, w, h) {
+    const patch = document.createElement("canvas");
+    patch.width = w;
+    patch.height = h;
+    const patchCtx = patch.getContext("2d", { alpha: true });
+    patchCtx.imageSmoothingEnabled = false;
+    const sourceX = this.width - destX - w;
+    patchCtx.save();
+    patchCtx.translate(w, 0);
+    patchCtx.scale(-1, 1);
+    patchCtx.drawImage(this.referenceLayer, sourceX, destY, w, h, 0, 0, w, h);
+    patchCtx.restore();
+    return patch;
+  }
+
+  restart() {
+    if (!this.referenceImage.complete) {
+      this.gameState = "loading";
+      this.invalidate(false);
+      return;
+    }
+
+    this.blocks = this.createBlocksFromReference();
+    this.units = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.cards = this.cardManager.resetFromBlocks(this.blocks);
+    this.slotManager.reset();
+    this.setWagonIdle();
+
     this.gameState = "playing";
-    this.remainingBlocks = this.level.aliveBlocks().length;
+    this.remainingBlocks = this.blocks.length;
     this.lastTimestamp = performance.now();
-    this.buildStaticLayer();
     this.invalidate(true);
+  }
+
+  createBlocksFromReference() {
+    const blocks = [];
+    let id = 0;
+
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        id += 1;
+        const blockColor = this.getCellColor(col, row);
+        blocks.push(new Block(id, col, row, blockColor));
+      }
+    }
+
+    return blocks;
+  }
+
+  createCardsFromBlocks() {
+    this.cards = this.cardManager.createFromBlocks(this.blocks);
+    return this.cards;
+  }
+
+  normalizeShooterQueues(cards) {
+    this.cards = this.cardManager.normalizeQueues(cards);
+    return this.cards;
+  }
+
+  isFrontRowCard(card) {
+    return this.cardManager.isFrontRowCard(card);
+  }
+
+  getFrontLaneIds() {
+    return this.cardManager.getFrontLaneIds();
+  }
+
+  getActiveFrontCardInLane(lane) {
+    return this.cardManager.getActiveFrontCardInLane(lane);
+  }
+
+  getCardPigCenter(card) {
+    return this.cardManager.getCardPigCenter(card);
+  }
+
+  sampleReferenceCellColor(col, row) {
+    const x = Math.floor(REFERENCE_FIELD_X + col * REFERENCE_FIELD_STEP + REFERENCE_FIELD_STEP * 0.5);
+    const y = Math.floor(REFERENCE_FIELD_Y + row * REFERENCE_FIELD_STEP + REFERENCE_FIELD_STEP * 0.5);
+    const i = (y * this.width + x) * 4;
+    const r = this.referencePixels[i];
+    const g = this.referencePixels[i + 1];
+    const b = this.referencePixels[i + 2];
+    return g > 90 && g - r > 26 && g - b > 22 ? "green" : "black";
+  }
+
+  getCellColor(col, row) {
+    if (!this.referencePixels) {
+      const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
+      return fallbackRow[col] === "G" ? "green" : "black";
+    }
+    return this.sampleReferenceCellColor(col, row);
   }
 
   spawnUnit(cardIndex) {
     if (this.gameState !== "playing") {
-      return;
+      return false;
     }
 
-    const card = this.shooterCards[cardIndex];
-    if (!card || card.used) {
-      return;
+    if (this.units.length >= MAX_ACTIVE_UNITS) {
+      return false;
+    }
+    const card = this.cards[cardIndex];
+    if (!card) {
+      return false;
+    }
+    if (!this.isSpawnAreaClear()) {
+      return false;
+    }
+    if (!this.isFrontRowCard(card)) {
+      return false;
+    }
+    if (card.used) {
+      return false;
+    }
+    if (card.ammo <= 0) {
+      card.used = true;
+      this.normalizeShooterQueues(this.cards);
+      return false;
     }
 
-    card.used = true;
     this.unitIdCounter += 1;
-    this.units.push(new Unit(this.unitIdCounter, card.color, card.ammo, this.conveyor));
+    const launchFrom = {
+      x: card.x + card.w * 0.5,
+      y: card.y + card.h * 0.56,
+    };
+    const unit = new Unit(
+      this.unitIdCounter,
+      card.color,
+      card.ammo,
+      launchFrom,
+      this.conveyor
+    );
+    this.units.push(unit);
+    card.used = true;
     this.invalidate(true);
+    return true;
   }
 
-  updateUnits(dt) {
+  isSpawnAreaClear() {
+    const spawn = this.conveyor.pointAtDistance(this.conveyor.spawnDistance);
     for (const unit of this.units) {
-      unit.update(dt, this);
+      if (!unit.alive) {
+        continue;
+      }
+      if (unit.state === "launching") {
+        return false;
+      }
+      if (unit.state !== "moving") {
+        continue;
+      }
+      if (Math.hypot(unit.position.x - spawn.x, unit.position.y - spawn.y) < SPAWN_CLEAR_RADIUS) {
+        return false;
+      }
     }
-    this.units = this.units.filter((unit) => unit.alive);
+    return true;
   }
 
-  findTarget(unit) {
-    let bestTarget = null;
+  relaunchParkedUnit(unit) {
+    if (!unit || !unit.alive || unit.state !== "parked" || unit.ammo <= 0 || this.gameState !== "playing") {
+      return false;
+    }
+    if (unit.slotIndex !== null) {
+      this.freeSlot(unit.slotIndex, unit.id);
+      unit.slotIndex = null;
+    }
+    unit.state = "launching";
+    unit.launchFrom = { ...unit.position };
+    unit.launchTo = this.conveyor.pointAtDistance(this.conveyor.spawnDistance);
+    unit.launchProgress = 0;
+    unit.landProgress = 0;
+    unit.landTo = null;
+    unit.landFrom = { ...unit.launchTo };
+    unit.loopDistance = 0;
+    unit.distanceOnTrack = this.conveyor.spawnDistance;
+    unit.cooldown = 0;
+    this.invalidate(true);
+    return true;
+  }
+
+  tryRelaunchParkedUnitAt(x, y) {
+    const hitRadius = PARKED_UNIT_TAP_RADIUS;
+    let bestUnit = null;
     let bestDistance = Infinity;
+    let bestY = -Infinity;
+    for (let i = this.units.length - 1; i >= 0; i--) {
+      const unit = this.units[i];
+      if (!unit.alive || unit.state !== "parked" || unit.ammo <= 0) {
+        continue;
+      }
+      const d = Math.hypot(x - unit.position.x, y - unit.position.y);
+      if (d > hitRadius) {
+        continue;
+      }
+      if (d < bestDistance || (Math.abs(d - bestDistance) < 0.0001 && unit.position.y > bestY)) {
+        bestDistance = d;
+        bestY = unit.position.y;
+        bestUnit = unit;
+      }
+    }
+    if (bestUnit) {
+      return this.relaunchParkedUnit(bestUnit);
+    }
+    return false;
+  }
+
+  claimFreeSlot(unitId) {
+    return this.slotManager.claim(unitId);
+  }
+
+  freeSlot(slotIndex, unitId) {
+    this.slotManager.free(slotIndex, unitId);
+  }
+
+  getSlotCenter(slotIndex) {
+    return this.slotManager.getCenter(slotIndex);
+  }
+
+  handleUnitReturned(unit) {
+    void unit;
+  }
+
+  setWagonIdle() {
+    this.wagon.distance = this.conveyor.spawnDistance;
+    this.wagon.moving = false;
+    this.wagon.color = null;
+    const point = this.conveyor.pointAtDistance(this.wagon.distance);
+    this.wagon.x = point.x;
+    this.wagon.y = point.y;
+  }
+
+  startWagonRide(color, distance) {
+    this.wagon.moving = true;
+    this.wagon.color = color;
+    this.setWagonRideDistance(distance, color);
+  }
+
+  setWagonRideDistance(distance, color) {
+    this.wagon.distance = distance;
+    this.wagon.moving = true;
+    this.wagon.color = color;
+    const point = this.conveyor.pointAtDistance(distance);
+    this.wagon.x = point.x;
+    this.wagon.y = point.y;
+  }
+
+  getWagonSeatPoint() {
+    return {
+      x: this.wagon.x + LAYOUT.wagonSprite.seatOffsetX,
+      y: this.wagon.y + LAYOUT.wagonSprite.seatOffsetY,
+    };
+  }
+
+  getFieldCenter() {
+    return {
+      x: LAYOUT.fieldX + (LAYOUT.fieldCols * LAYOUT.fieldStep) / 2,
+      y: LAYOUT.fieldY + (LAYOUT.fieldRows * LAYOUT.fieldStep) / 2,
+    };
+  }
+
+  getInwardShootDirection(sourcePoint) {
+    const center = this.getFieldCenter();
+    const dx = center.x - sourcePoint.x;
+    const dy = center.y - sourcePoint.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) {
+      return null;
+    }
+    return {
+      x: dx / dist,
+      y: dy / dist,
+    };
+  }
+
+  findTargetOnLine(sourcePoint, color, direction) {
+    let best = null;
+    let bestDistance = Infinity;
+    const lineHalfWidth = LAYOUT.cellSize * 0.45;
     const reservedTargets = new Set(
       this.projectiles
-        .filter((projectile) => projectile.target && projectile.target.alive && projectile.color === unit.color)
+        .filter((projectile) => projectile.target && projectile.target.alive)
         .map((projectile) => projectile.target.id)
     );
 
-    for (const block of this.level.blocks) {
-      if (!block.alive || block.color !== unit.color || reservedTargets.has(block.id)) {
+    for (const block of this.blocks) {
+      if (!block.alive || block.color !== color || reservedTargets.has(block.id)) {
         continue;
       }
-      const point = this.blockCenter(block);
-      const dist = distance(point, unit.position);
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        bestTarget = block;
+      const center = this.blockCenter(block);
+      const dx = center.x - sourcePoint.x;
+      const dy = center.y - sourcePoint.y;
+      const forwardDistance = dx * direction.x + dy * direction.y;
+      if (forwardDistance <= 0) {
+        continue;
+      }
+      const sideDistance = Math.abs(dx * direction.y - dy * direction.x);
+      if (sideDistance > lineHalfWidth) {
+        continue;
+      }
+      if (forwardDistance < bestDistance) {
+        bestDistance = forwardDistance;
+        best = block;
       }
     }
 
-    return bestTarget;
+    return best;
   }
 
-  fireProjectile(block, unit) {
-    const targetPoint = this.blockCenter(block);
-    const dx = targetPoint.x - unit.position.x;
-    const dy = targetPoint.y - unit.position.y;
-    const distanceToTarget = Math.max(1, Math.hypot(dx, dy));
+  fireProjectile(unit, block) {
+    const target = this.blockCenter(block);
+    const dx = target.x - unit.position.x;
+    const dy = target.y - unit.position.y;
+    const dist = Math.max(1, Math.hypot(dx, dy));
 
     this.projectiles.push({
       x: unit.position.x,
       y: unit.position.y,
-      toX: targetPoint.x,
-      toY: targetPoint.y,
-      vx: (dx / distanceToTarget) * 540,
-      vy: (dy / distanceToTarget) * 540,
-      radius: 4,
+      toX: target.x,
+      toY: target.y,
+      vx: (dx / dist) * BULLET_SPEED,
+      vy: (dy / dist) * BULLET_SPEED,
+      life: Math.max(0.06, dist / BULLET_SPEED),
       target: block,
       color: unit.color,
-      life: Math.max(0.12, distanceToTarget / 540),
+      radius: BULLET_RADIUS,
+      trailLength: BULLET_TRAIL_LENGTH,
     });
   }
 
-  damageBlock(block, colorName) {
+  damageBlock(block, color) {
     if (!block || !block.alive) {
       return;
     }
 
-    block.hp -= 1;
+    block.alive = false;
     block.hitFlash = 1;
-    const targetPoint = this.blockCenter(block);
-    this.spawnParticles(targetPoint.x, targetPoint.y, colorName, block.hp <= 0 ? 10 : 4);
+    this.remainingBlocks -= 1;
 
-    if (block.hp <= 0) {
-      block.alive = false;
-    }
+    const center = this.blockCenter(block);
+    this.spawnParticles(center.x, center.y, color, 10);
 
-    this.remainingBlocks = this.level.aliveBlocks().length;
-    this.checkWin();
-  }
-
-  checkWin() {
-    if (this.remainingBlocks === 0) {
-      this.gameState = "won";
-      this.invalidate(true);
-    }
   }
 
   blockCenter(block) {
-    const step = this.layout.cellSize + this.layout.cellGap;
     return {
-      x: this.layout.fieldX + block.gridX * step + this.layout.cellSize / 2,
-      y: this.layout.fieldY + block.gridY * step + this.layout.cellSize / 2 - 1,
+      x: block.x + block.size * 0.5,
+      y: block.y + block.size * 0.5,
     };
   }
 
+  spawnParticles(x, y, color, amount) {
+    const particleColor = color === "green" ? COLORS.particleGreen : COLORS.particleBlack;
+    for (let i = 0; i < amount; i++) {
+      const angle = (Math.PI * 2 * i) / amount + Math.random() * 0.3;
+      const speed = 36 + Math.random() * 80;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.22 + Math.random() * 0.2,
+        maxLife: 0.38,
+        size: 3 + Math.random() * 3,
+        color: particleColor,
+      });
+    }
+  }
+
   update(dt) {
-    for (const block of this.level.blocks) {
+    for (const block of this.blocks) {
       block.update(dt);
     }
 
-    if (this.gameState === "playing") {
-      this.updateUnits(dt);
+    for (const unit of this.units) {
+      unit.update(dt, this);
     }
+    this.units = this.units.filter((unit) => unit.alive);
 
     const nextProjectiles = [];
     for (const projectile of this.projectiles) {
@@ -609,8 +1183,7 @@ class Game {
 
       const reachedTarget =
         projectile.life <= 0 ||
-        Math.hypot(projectile.x - projectile.toX, projectile.y - projectile.toY) <= 8;
-
+        Math.hypot(projectile.x - projectile.toX, projectile.y - projectile.toY) <= projectile.radius + 2;
       if (reachedTarget) {
         this.damageBlock(projectile.target, projectile.color);
       } else {
@@ -624,238 +1197,347 @@ class Game {
         ...particle,
         x: particle.x + particle.vx * dt,
         y: particle.y + particle.vy * dt,
-        vx: particle.vx * 0.96,
-        vy: particle.vy * 0.96 + 6 * dt,
+        vx: particle.vx * 0.95,
+        vy: particle.vy * 0.95 + 22 * dt,
         life: particle.life - dt,
       }))
       .filter((particle) => particle.life > 0);
   }
 
-  drawBackground(ctx) {
-    const bg = ctx.createLinearGradient(0, 0, 0, this.height);
-    bg.addColorStop(0, COLORS.bgTop);
-    bg.addColorStop(1, COLORS.bgBottom);
-    ctx.fillStyle = bg;
+  drawLoading(ctx) {
+    ctx.fillStyle = "#214113";
     ctx.fillRect(0, 0, this.width, this.height);
-
-    for (let i = 0; i < 18; i++) {
-      const alpha = 0.05 + (i % 4) * 0.015;
-      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
-      roundedRect(
-        ctx,
-        28 + (i % 6) * 58,
-        92 + Math.floor(i / 6) * 146,
-        12,
-        24,
-        6
-      );
-      ctx.fill();
-    }
-  }
-
-  drawTopBarBase(ctx) {
-    const gearX = 46;
-    const gearY = 44;
-
-    ctx.save();
-    ctx.shadowColor = COLORS.shadow;
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetY = 4;
-
-    ctx.beginPath();
-    ctx.arc(gearX, gearY, 24, 0, Math.PI * 2);
-    ctx.fillStyle = "#6fb6ff";
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#2e3452";
-    ctx.stroke();
-
-    ctx.fillStyle = "#f2f7ff";
-    ctx.font = "900 24px Trebuchet MS, Verdana, sans-serif";
+    ctx.fillStyle = COLORS.white;
+    ctx.font = "700 42px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("\u2699", gearX, gearY + 1);
-
-    drawGlossyPill(ctx, 128, 26, 134, 36, ["#6fc0ff", "#4d8fe9"], "Level 1", 18);
-    drawGlossyPill(ctx, 264, 26, 82, 36, ["#ffd669", "#ffb53d"], "1000", 18);
-    drawGlossyPill(ctx, 346, 28, 30, 32, ["#ffce6f", "#ffad37"], "+", 20);
-
-    ctx.restore();
+    const label = this.gameState === "error" ? "Ref.png failed to load" : "Loading Ref.png...";
+    ctx.fillText(label, this.width / 2, this.height / 2);
   }
 
-  drawRestartButton(ctx) {
-    const button = this.layout.restartRect;
-    const hover = this.hoverHotspot === "restart";
-    drawGlossyPill(
-      ctx,
-      button.x,
-      button.y,
-      button.w,
-      button.h,
-      hover ? ["#ffd27c", "#ffba4d"] : ["#ffc75d", "#f1a730"],
-      "Restart",
-      13
+  drawBackground(ctx) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, this.width, this.height);
+    const board = LAYOUT.boardMask;
+
+    // Base board area (grass).
+    ctx.save();
+    roundedRect(ctx, board.x, board.y, board.w, board.h, board.r);
+    ctx.fillStyle = BOARD_FILL_COLOR;
+    ctx.fill();
+    ctx.restore();
+
+    // Guaranteed non-brown underlay under the 9x9 image field.
+    ctx.save();
+    ctx.fillStyle = FIELD_UNDERLAY_COLOR;
+    ctx.fillRect(
+      LAYOUT.fieldX - 2,
+      LAYOUT.fieldY - 2,
+      LAYOUT.fieldCols * LAYOUT.fieldStep + 4,
+      LAYOUT.fieldRows * LAYOUT.fieldStep + 4
     );
-  }
+    ctx.restore();
 
-  drawPanelsBase(ctx) {
-    const outer = this.layout.boardPanel;
-    const inner = this.layout.boardInner;
-
+    // Wood ring around track.
+    const outerWood = {
+      x: LAYOUT.track.x - 40,
+      y: LAYOUT.track.y - 40,
+      w: LAYOUT.track.w + 80,
+      h: LAYOUT.track.h + 80,
+      r: LAYOUT.track.r + 36,
+    };
+    const innerWood = {
+      x: LAYOUT.track.x + 40,
+      y: LAYOUT.track.y + 40,
+      w: LAYOUT.track.w - 80,
+      h: LAYOUT.track.h - 80,
+      r: Math.max(8, LAYOUT.track.r - 34),
+    };
     ctx.save();
-    ctx.shadowColor = "rgba(8, 9, 19, 0.28)";
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 8;
-    roundedRect(ctx, outer.x, outer.y, outer.w, outer.h, outer.r);
-    ctx.fillStyle = COLORS.panel;
+    ctx.beginPath();
+    roundedRect(ctx, outerWood.x, outerWood.y, outerWood.w, outerWood.h, outerWood.r);
+    roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
+    const woodGrad = ctx.createLinearGradient(0, outerWood.y, 0, outerWood.y + outerWood.h);
+    woodGrad.addColorStop(0, "#9f6e34");
+    woodGrad.addColorStop(0.5, "#6f451f");
+    woodGrad.addColorStop(1, "#a47539");
+    ctx.fillStyle = woodGrad;
+    // roundedRect() starts a new path internally, so fill the outer wood first...
     ctx.fill();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "rgba(236,246,255,0.84)";
-    ctx.stroke();
+    // ...then paint the center back to board color to avoid a solid brown square in the field.
+    roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
+    ctx.fillStyle = BOARD_FILL_COLOR;
+    ctx.fill();
+    ctx.restore();
 
-    roundedRect(ctx, inner.x, inner.y, inner.w, inner.h, inner.r);
-    ctx.fillStyle = COLORS.panelInner;
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(221, 234, 255, 0.72)";
-    ctx.stroke();
+    // Sleepers along the path.
+    for (let d = 0; d < this.conveyor.totalLength; d += 26) {
+      const p = this.conveyor.pointAtDistance(d);
+      const p2 = this.conveyor.pointAtDistance(d + 2);
+      const tangent = Math.atan2(p2.y - p.y, p2.x - p.x);
+      const angle = tangent + Math.PI * 0.5;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(angle);
+      ctx.fillStyle = "#5b3619";
+      ctx.fillRect(-19, -6, 38, 12);
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(-19, -6, 38, 3);
+      ctx.restore();
+    }
+
+    // Metal rails.
+    const outerRail = {
+      x: LAYOUT.track.x - 24,
+      y: LAYOUT.track.y - 24,
+      w: LAYOUT.track.w + 48,
+      h: LAYOUT.track.h + 48,
+      r: LAYOUT.track.r + 22,
+    };
+    const innerRail = {
+      x: LAYOUT.track.x + 24,
+      y: LAYOUT.track.y + 24,
+      w: LAYOUT.track.w - 48,
+      h: LAYOUT.track.h - 48,
+      r: Math.max(8, LAYOUT.track.r - 22),
+    };
+    const strokeRail = (rect) => {
+      roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+      ctx.strokeStyle = "#ded7ca";
+      ctx.lineWidth = 6;
+      ctx.stroke();
+      roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+      ctx.strokeStyle = "rgba(55,55,55,0.35)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    };
+    ctx.save();
+    strokeRail(outerRail);
+    strokeRail(innerRail);
     ctx.restore();
 
   }
 
-  drawPanelsDynamic(ctx) {
-    const instruction = this.getInstructionLines();
-    ctx.fillStyle = COLORS.text;
-    ctx.strokeStyle = "rgba(32, 36, 57, 0.95)";
-    ctx.lineWidth = 8;
-    ctx.font = "900 18px Trebuchet MS, Verdana, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (let i = 0; i < instruction.length; i++) {
-      const y = 132 + i * 26;
-      ctx.strokeText(instruction[i], this.width / 2, y);
-      ctx.fillText(instruction[i], this.width / 2, y);
+  drawDestroyedBlocks(ctx) {
+    for (const block of this.blocks) {
+      if (!block.alive) {
+        continue;
+      }
+      const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+      if (sprite) {
+        ctx.drawImage(sprite, block.x, block.y, block.size, block.size);
+      } else {
+        ctx.fillStyle = block.color === "green" ? "#81c341" : "#2a2a2a";
+        roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
     }
 
-    ctx.fillStyle = COLORS.text;
-    ctx.strokeStyle = "rgba(32, 36, 57, 0.95)";
-    ctx.font = "800 15px Trebuchet MS, Verdana, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.lineWidth = 5;
-    const remaining = `Remaining blocks: ${this.remainingBlocks}`;
-    ctx.strokeText(remaining, this.width / 2, 510);
-    ctx.fillText(remaining, this.width / 2, 510);
-  }
-
-  drawFieldBase(ctx) {
-    roundedRect(ctx, this.layout.fieldX - 10, this.layout.fieldY - 10, this.layout.fieldSize + 20, this.layout.fieldSize + 20, 14);
-    ctx.fillStyle = "#515674";
-    ctx.fill();
-  }
-
-  drawBlocks(ctx) {
-    for (const block of this.level.blocks) {
-      block.draw(ctx, this.level.metrics);
-    }
-  }
-
-  drawConveyorBase(ctx) {
-    const trackRect = this.conveyor.trackRect;
-
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = COLORS.trackShadow;
-    ctx.lineWidth = 34;
-    ctx.beginPath();
-    this.tracePath(ctx, this.conveyor.path);
-    ctx.stroke();
-
-    ctx.strokeStyle = COLORS.frameEdge;
-    ctx.lineWidth = 28;
-    ctx.beginPath();
-    this.tracePath(ctx, this.conveyor.path);
-    ctx.stroke();
-
-    ctx.strokeStyle = COLORS.track;
-    ctx.lineWidth = 22;
-    ctx.beginPath();
-    this.tracePath(ctx, this.conveyor.path);
-    ctx.stroke();
-
-    for (let i = 0; i < 24; i++) {
-      const point = this.conveyor.pointAtDistance((i / 24) * this.conveyor.totalLength);
+    for (const block of this.blocks) {
+      if (block.alive || block.hitFlash <= 0) {
+        continue;
+      }
       ctx.save();
-      ctx.translate(point.x, point.y);
-      ctx.fillStyle = COLORS.trackArrow;
-      ctx.beginPath();
-      ctx.moveTo(-6, -4);
-      ctx.lineTo(4, 0);
-      ctx.lineTo(-6, 4);
-      ctx.closePath();
+      ctx.globalAlpha = block.hitFlash * 0.25;
+      ctx.fillStyle = "#ffffff";
+      roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
       ctx.fill();
       ctx.restore();
     }
 
-    ctx.restore();
+  }
+
+  drawUnitsOnTrack(ctx) {
+    const unitsByDepth = this.units
+      .filter((unit) => unit.alive)
+      .slice()
+      .sort((a, b) => {
+        if (a.position.y !== b.position.y) {
+          return a.position.y - b.position.y;
+        }
+        return a.id - b.id;
+      });
+    for (const unit of unitsByDepth) {
+      if (unit.state === "moving") {
+        this.drawPig(ctx, unit.position.x, unit.position.y, SHOOTER_PIG_SIZE, unit.color, 1);
+        this.drawAmmoBadge(ctx, unit.position.x, unit.position.y + 70, unit.ammo, 30, 20);
+      } else {
+        this.drawPig(ctx, unit.position.x, unit.position.y, SHOOTER_PIG_SIZE, unit.color, 1);
+        this.drawAmmoBadge(ctx, unit.position.x, unit.position.y + 62, unit.ammo, 28, 18);
+      }
+    }
+  }
+
+  drawSlotState(ctx) {
+    for (const slot of LAYOUT.slots) {
+      const size = Math.min(slot.w, slot.h);
+      const x = slot.x + (slot.w - size) * 0.5;
+      const y = slot.y + (slot.h - size) * 0.5;
+      ctx.save();
+      roundedRect(ctx, x, y, size, size, 14);
+      ctx.fillStyle = "rgba(20, 26, 32, 0.62)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.14)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  drawPig(ctx, x, y, size, colorName, alpha = 1) {
+    const bodyColor = colorName === "green" ? "#8edf56" : "#2b2b2b";
+    const darkColor = colorName === "green" ? "#63a536" : "#111111";
+    const shineColor = colorName === "green" ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.12)";
+    const earW = size * 0.2;
+    const earH = size * 0.24;
+    const bodyW = size;
+    const bodyH = size * 0.92;
+    const bodyX = x - bodyW / 2;
+    const bodyY = y - bodyH / 2 + earH * 0.6;
 
     ctx.save();
-    ctx.strokeStyle = "rgba(224,236,255,0.8)";
-    ctx.lineWidth = 6;
-    roundedRect(ctx, trackRect.x, trackRect.y, trackRect.w, trackRect.h, trackRect.r);
-    ctx.stroke();
+    ctx.globalAlpha = alpha;
+    roundedRect(ctx, bodyX + 1.5, bodyY + 3, bodyW, bodyH, size * 0.26);
+    ctx.fillStyle = darkColor;
+    ctx.fill();
+
+    roundedRect(ctx, bodyX, bodyY, bodyW, bodyH - 2, size * 0.26);
+    ctx.fillStyle = bodyColor;
+    ctx.fill();
+
+    roundedRect(ctx, bodyX + bodyW * 0.18, bodyY - earH * 0.85, earW, earH, 5);
+    ctx.fillStyle = darkColor;
+    ctx.fill();
+    roundedRect(ctx, bodyX + bodyW * 0.62, bodyY - earH * 0.85, earW, earH, 5);
+    ctx.fill();
+
+    roundedRect(ctx, bodyX + 6, bodyY + 6, bodyW - 12, bodyH * 0.34, size * 0.18);
+    ctx.fillStyle = shineColor;
+    ctx.fill();
     ctx.restore();
   }
 
-  drawConveyorDynamic(ctx) {
+  drawWagonLayer(ctx) {
+    void ctx;
+  }
+
+  drawBottomCleanup(ctx) {
+    const slotsBottom = Math.max(...LAYOUT.slots.map((slot) => slot.y + slot.h));
+    const y = Math.floor(slotsBottom);
+    const h = this.height - y;
     ctx.save();
-    const feeder = this.layout.spawnDecor;
-    roundedRect(ctx, feeder.x, feeder.y, feeder.w, feeder.h, 4);
-    ctx.fillStyle = "#edf5ff";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, y, this.width, h);
+    ctx.restore();
+  }
+
+  drawAmmoBadge(ctx, x, y, value, width, fontSize) {
+    ctx.save();
+    roundedRect(ctx, x - width, y - 13, width * 2, 24, 8);
+    ctx.fillStyle = COLORS.badgeBg;
     ctx.fill();
-    for (let i = 0; i < 6; i++) {
-      ctx.fillStyle = i % 2 === 0 ? "#a5b6d2" : "#d8e3f8";
-      ctx.fillRect(feeder.x + 2, feeder.y + 4 + i * 7, feeder.w - 4, 4);
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.white;
+    ctx.strokeStyle = COLORS.shadow;
+    ctx.lineWidth = 4;
+    ctx.lineJoin = "round";
+    ctx.font = `900 ${fontSize}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeText(String(value), x, y + 0.5);
+    ctx.fillText(String(value), x, y + 0.5);
+    ctx.restore();
+  }
+
+  drawCardState(ctx) {
+    const cardsToDraw = [...this.cards].sort((a, b) => a.row - b.row);
+    for (const card of cardsToDraw) {
+      if (card.used) {
+        continue;
+      }
+      const center = this.getCardPigCenter(card);
+      this.drawPig(ctx, center.x, center.y, SHOOTER_PIG_SIZE, card.color, 1);
+      this.drawAmmoBadge(ctx, center.x, card.y + card.h - 16, card.ammo, 38, 32);
+    }
+  }
+
+  drawTapDebug(ctx) {
+    if (!SHOW_TAP_DEBUG) {
+      return;
     }
 
-    ctx.font = "900 14px Trebuchet MS, Verdana, sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "alphabetic";
-    ctx.fillStyle = COLORS.text;
-    ctx.strokeStyle = "rgba(32, 36, 57, 0.95)";
-    ctx.lineWidth = 5;
-    const slotUsage = `${this.conveyor.slots.filter((slot) => slot.occupiedBy === null).length}/${this.conveyor.slotCount}`;
-    ctx.strokeText(slotUsage, 16, 532);
-    ctx.fillText(slotUsage, 16, 532);
-    ctx.restore();
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
 
-    for (let i = 0; i < this.conveyor.slots.length; i++) {
-      const slot = this.conveyor.slots[i];
-      const x = slot.x - this.layout.slotW / 2;
-      const y = this.layout.slotY;
-      roundedRect(ctx, x, y, this.layout.slotW, this.layout.slotH, 10);
-      ctx.fillStyle = slot.occupiedBy === null ? COLORS.slot : "#50567a";
-      ctx.fill();
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = COLORS.slotEdge;
+    for (const lane of this.getFrontLaneIds()) {
+      const card = this.getActiveFrontCardInLane(lane);
+      if (!card) {
+        continue;
+      }
+
+      const center = this.getCardPigCenter(card);
+      ctx.strokeStyle = "rgba(255, 80, 80, 0.95)";
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, SHOOTER_HIT_RADIUS, 0, Math.PI * 2);
       ctx.stroke();
     }
+
+    ctx.strokeStyle = "rgba(255, 80, 80, 0.95)";
+    for (const unit of this.units) {
+      if (!unit.alive || unit.state !== "parked" || unit.ammo <= 0) {
+        continue;
+      }
+      ctx.beginPath();
+      ctx.arc(unit.position.x, unit.position.y, PARKED_UNIT_TAP_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   drawProjectiles(ctx) {
     for (const projectile of this.projectiles) {
-      const color = projectile.color === "pink" ? COLORS.pink : COLORS.cyan;
+      const bulletColor = projectile.color === "green" ? COLORS.bulletGreen : COLORS.bulletBlack;
+      const bulletCoreColor = projectile.color === "green" ? COLORS.bulletGreenCore : COLORS.bulletBlackCore;
+      const speed = Math.hypot(projectile.vx, projectile.vy) || 1;
+      const dirX = projectile.vx / speed;
+      const dirY = projectile.vy / speed;
+      const tailX = projectile.x - dirX * projectile.trailLength;
+      const tailY = projectile.y - dirY * projectile.trailLength;
       ctx.save();
-      ctx.globalAlpha = 0.95;
-      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = bulletColor;
+      ctx.lineCap = "round";
+      ctx.lineWidth = projectile.radius * 1.35;
+      ctx.beginPath();
+      ctx.moveTo(tailX, tailY);
+      ctx.lineTo(projectile.x, projectile.y);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.92;
+      ctx.strokeStyle = bulletCoreColor;
+      ctx.lineWidth = projectile.radius * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(tailX + dirX * projectile.radius * 0.8, tailY + dirY * projectile.radius * 0.8);
+      ctx.lineTo(projectile.x, projectile.y);
+      ctx.stroke();
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = bulletColor;
       ctx.beginPath();
       ctx.arc(projectile.x, projectile.y, projectile.radius, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillStyle = bulletCoreColor;
       ctx.beginPath();
-      ctx.arc(projectile.x - 1, projectile.y - 1, Math.max(1.2, projectile.radius * 0.42), 0, Math.PI * 2);
+      ctx.arc(projectile.x, projectile.y, projectile.radius * 0.45, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -866,176 +1548,29 @@ class Game {
       ctx.save();
       ctx.globalAlpha = particle.life / particle.maxLife;
       ctx.fillStyle = particle.color;
-      ctx.translate(particle.x, particle.y);
-      ctx.rotate(particle.rotation);
-      ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size);
+      ctx.fillRect(particle.x - particle.size / 2, particle.y - particle.size / 2, particle.size, particle.size);
       ctx.restore();
     }
   }
 
-  drawUnits(ctx) {
-    for (const unit of this.units) {
-      this.drawShooterShape(
-        ctx,
-        unit.position.x,
-        unit.position.y,
-        16,
-        unit.color,
-        unit.ammo,
-        0
-      );
-    }
-  }
-
-  drawShooterTrayBase(ctx) {
-    const trayTop = 650;
-    ctx.fillStyle = "rgba(32, 36, 58, 0.14)";
-    roundedRect(ctx, 24, trayTop - 18, 342, 212, 22);
-    ctx.fill();
-  }
-
-  drawShooterTrayDynamic(ctx) {
-    for (let i = 0; i < this.shooterCards.length; i++) {
-      const card = this.shooterCards[i];
-      const hover = this.hoverHotspot === `card-${i}` && !card.used && this.gameState === "playing";
-      this.drawShooterCard(ctx, card, hover);
-    }
-  }
-
-  drawShooterCard(ctx, card, hover) {
-    const x = card.x;
-    const y = card.y;
-    const w = card.w;
-    const h = card.h;
-
-    ctx.save();
-    ctx.globalAlpha = card.used ? 0.34 : 1;
-    ctx.shadowColor = COLORS.cardShadow;
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 4;
-    const tint = hover ? 8 : 0;
-    roundedRect(ctx, x, y + 10, w, h - 10, 20);
-    ctx.fillStyle = "#46506d";
-    ctx.fill();
-
-    this.drawShooterShape(
-      ctx,
-      x + w / 2,
-      y + h / 2 + 6,
-      28 + tint * 0.08,
-      card.color,
-      card.used ? 0 : card.ammo,
-      card.used ? 0.22 : 0.42
-    );
-    ctx.restore();
-  }
-
-  drawShooterShape(ctx, cx, cy, size, color, ammo, glowAlpha) {
-    const sprite = this.getShooterBodySprite(size, color);
-    const drawX = cx - sprite.width / 2;
-    const drawY = cy - sprite.height / 2;
-
-    ctx.save();
-    if (glowAlpha > 0) {
-      ctx.shadowColor = color === "pink" ? COLORS.pink : COLORS.cyan;
-      ctx.shadowBlur = 10 * glowAlpha;
-    }
-    ctx.drawImage(sprite, drawX, drawY);
-
-    ctx.fillStyle = COLORS.text;
-    ctx.strokeStyle = "rgba(33, 36, 57, 0.9)";
-    ctx.lineWidth = 4;
-    ctx.lineJoin = "round";
-    ctx.font = `900 ${Math.max(11, size * 0.62)}px Trebuchet MS, Verdana, sans-serif`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.strokeText(String(ammo), cx, cy + size * 0.07);
-    ctx.fillText(String(ammo), cx, cy + size * 0.07);
-    ctx.restore();
-  }
-
-  drawWinOverlay(ctx) {
-    if (this.gameState !== "won") {
-      return;
-    }
-
-    ctx.fillStyle = COLORS.overlay;
-    ctx.fillRect(0, 0, this.width, this.height);
-
-    roundedRect(ctx, 66, 320, 258, 162, 24);
-    ctx.fillStyle = "#5e6488";
-    ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(236,246,255,0.82)";
-    ctx.stroke();
-
-    ctx.fillStyle = COLORS.text;
-    ctx.strokeStyle = "rgba(32, 36, 57, 0.95)";
-    ctx.lineWidth = 7;
-    ctx.font = "900 28px Trebuchet MS, Verdana, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.strokeText("Level Complete", this.width / 2, 374);
-    ctx.fillText("Level Complete", this.width / 2, 374);
-
-    ctx.font = "800 16px Trebuchet MS, Verdana, sans-serif";
-    ctx.lineWidth = 5;
-    ctx.strokeText("Tap Restart to play again", this.width / 2, 420);
-    ctx.fillText("Tap Restart to play again", this.width / 2, 420);
-  }
-
-  getInstructionLines() {
-    const hasMovingUnit = this.units.some((unit) => unit.state === "moving");
-    if (hasMovingUnit) {
-      return ["Wait for shooter to travel."];
-    }
-    return ["Tap shooter to send it", "to the conveyor"];
-  }
-
-  spawnParticles(x, y, colorName, amount) {
-    const color = colorName === "pink" ? COLORS.pink : COLORS.cyan;
-    for (let i = 0; i < amount; i++) {
-      const angle = (Math.PI * 2 * i) / amount + Math.random() * 0.4;
-      const speed = 45 + Math.random() * 75;
-      this.particles.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: 3 + Math.random() * 3,
-        color,
-        life: 0.18 + Math.random() * 0.16,
-        maxLife: 0.34,
-        rotation: Math.random() * Math.PI,
-      });
-    }
-  }
-
-  tracePath(ctx, points) {
-    if (!points.length) {
-      return;
-    }
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i].x, points[i].y);
-    }
-    ctx.closePath();
-  }
-
   render() {
     const ctx = this.ctx;
+    if (this.gameState === "loading") {
+      this.drawLoading(ctx);
+      return;
+    }
+
     ctx.clearRect(0, 0, this.width, this.height);
-    ctx.drawImage(this.staticLayer, 0, 0, this.width, this.height);
-    this.drawRestartButton(ctx);
-    this.drawPanelsDynamic(ctx);
-    this.drawConveyorDynamic(ctx);
-    this.drawBlocks(ctx);
+    this.drawBackground(ctx);
+    this.drawWagonLayer(ctx);
+    this.drawBottomCleanup(ctx);
+    this.drawDestroyedBlocks(ctx);
+    this.drawSlotState(ctx);
     this.drawProjectiles(ctx);
     this.drawParticles(ctx);
-    this.drawUnits(ctx);
-    this.drawShooterTrayDynamic(ctx);
-    this.drawWinOverlay(ctx);
+    this.drawCardState(ctx);
+    this.drawUnitsOnTrack(ctx);
+    this.drawTapDebug(ctx);
     this.needsRender = false;
   }
 
@@ -1044,22 +1579,48 @@ class Game {
       return;
     }
 
-    const delta = clamp((timestamp - this.lastTimestamp) / 1000, 0, 0.05);
+    const dt = clamp((timestamp - this.lastTimestamp) / 1000, 0, 0.05);
     this.lastTimestamp = timestamp;
-    const wasAnimating = this.hasActiveAnimations();
+    const animating = this.hasActiveAnimations();
 
-    if (wasAnimating) {
-      this.update(delta);
+    if (animating) {
+      this.update(dt);
     }
 
-    if (this.needsRender || wasAnimating) {
+    if (this.needsRender || animating) {
       this.render();
     }
 
     if (this.hasActiveAnimations()) {
-      requestAnimationFrame((nextTimestamp) => this.frame(nextTimestamp));
+      requestAnimationFrame((t) => this.frame(t));
     } else {
       this.isLoopRunning = false;
+    }
+  }
+
+  hasActiveAnimations() {
+    const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
+    if (
+      (this.gameState === "playing" && hasActiveUnits) ||
+      this.projectiles.length > 0 ||
+      this.particles.length > 0
+    ) {
+      return true;
+    }
+
+    return this.blocks.some((block) => block.hitFlash > 0);
+  }
+
+  invalidate(animate = false) {
+    this.needsRender = true;
+    if (animate || this.hasActiveAnimations()) {
+      if (!this.isLoopRunning) {
+        this.isLoopRunning = true;
+        this.lastTimestamp = performance.now();
+        requestAnimationFrame((t) => this.frame(t));
+      }
+    } else {
+      this.render();
     }
   }
 
@@ -1068,8 +1629,8 @@ class Game {
     this.canvas.width = this.width * this.dpr;
     this.canvas.height = this.height * this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.buildStaticLayer();
-    this.render();
+    this.ctx.imageSmoothingEnabled = false;
+    this.invalidate(false);
   }
 
   hitTest(x, y, rect) {
@@ -1077,36 +1638,17 @@ class Game {
   }
 
   handlePointerMove(x, y) {
-    const previousHotspot = this.hoverHotspot;
-    this.hoverHotspot = null;
-    if (this.hitTest(x, y, this.layout.restartRect)) {
-      this.hoverHotspot = "restart";
-    } else {
-      for (let i = 0; i < this.shooterCards.length; i++) {
-        const card = this.shooterCards[i];
-        if (this.hitTest(x, y, card)) {
-          this.hoverHotspot = `card-${i}`;
-          break;
-        }
-      }
-    }
-
-    if (previousHotspot !== this.hoverHotspot) {
-      this.invalidate(false);
-    }
+    void x;
+    void y;
   }
 
   handlePointerDown(x, y) {
-    if (this.hitTest(x, y, this.layout.restartRect)) {
-      this.restart();
+    if (this.tryRelaunchParkedUnitAt(x, y)) {
       return;
     }
-
-    for (let i = 0; i < this.shooterCards.length; i++) {
-      if (this.hitTest(x, y, this.shooterCards[i])) {
-        this.spawnUnit(i);
-        return;
-      }
+    const tapCard = this.cardManager.findTapTarget(x, y);
+    if (tapCard) {
+      this.spawnUnit(tapCard.index);
     }
   }
 
@@ -1120,143 +1662,15 @@ class Game {
 
   bindEvents() {
     window.addEventListener("resize", () => this.resize());
-
-    const onMove = (event) => {
+    this.canvas.addEventListener("pointermove", (event) => {
       const point = this.getPointerPosition(event);
-      this.pointer = point;
       this.handlePointerMove(point.x, point.y);
-    };
-
-    const onPress = (event) => {
+    });
+    this.canvas.addEventListener("pointerdown", (event) => {
       const point = this.getPointerPosition(event);
-      this.handlePointerDown(point.x, point.y);
-    };
-
-    const onTouch = (event) => {
-      const touch = event.touches[0] || event.changedTouches[0];
-      if (!touch) {
-        return;
-      }
-      const point = this.getPointerPosition(touch);
-      this.pointer = point;
-      this.handlePointerMove(point.x, point.y);
       this.handlePointerDown(point.x, point.y);
       event.preventDefault();
-    };
-
-    this.canvas.addEventListener("mousemove", onMove);
-    this.canvas.addEventListener("mousedown", onPress);
-    this.canvas.addEventListener("touchstart", onTouch, { passive: false });
-  }
-
-  hasActiveAnimations() {
-    if (
-      (this.gameState === "playing" && this.units.length > 0) ||
-      this.projectiles.length > 0 ||
-      this.particles.length > 0
-    ) {
-      return true;
-    }
-    return this.level.blocks.some((block) => block.hitFlash > 0);
-  }
-
-  invalidate(animate = false) {
-    this.needsRender = true;
-    if (animate || this.hasActiveAnimations()) {
-      if (!this.isLoopRunning) {
-        this.isLoopRunning = true;
-        this.lastTimestamp = performance.now();
-        requestAnimationFrame((timestamp) => this.frame(timestamp));
-      }
-    } else {
-      this.render();
-    }
-  }
-
-  buildStaticLayer() {
-    this.staticLayer.width = this.width;
-    this.staticLayer.height = this.height;
-    const ctx = this.staticCtx;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.width, this.height);
-    this.drawBackground(ctx);
-    this.drawTopBarBase(ctx);
-    this.drawPanelsBase(ctx);
-    this.drawConveyorBase(ctx);
-    this.drawFieldBase(ctx);
-    this.drawShooterTrayBase(ctx);
-  }
-
-  getBlockSprite(color) {
-    const key = `block-${color}-${this.layout.cellSize}`;
-    if (this.spriteCache.has(key)) {
-      return this.spriteCache.get(key);
-    }
-
-    const size = this.layout.cellSize;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const base = color === "pink" ? COLORS.pink : COLORS.cyan;
-    const dark = color === "pink" ? COLORS.pinkDark : COLORS.cyanDark;
-
-    roundedRect(ctx, 0, 2, size, size - 2, 4);
-    ctx.fillStyle = dark;
-    ctx.fill();
-
-    roundedRect(ctx, 0, 0, size, size - 2, 4);
-    ctx.fillStyle = base;
-    ctx.fill();
-
-    roundedRect(ctx, 1.5, 1.5, size - 3, size * 0.42, 3);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    ctx.fill();
-
-    this.spriteCache.set(key, canvas);
-    return canvas;
-  }
-
-  getShooterBodySprite(size, color) {
-    const key = `shooter-${color}-${Math.round(size * 10)}`;
-    if (this.spriteCache.has(key)) {
-      return this.spriteCache.get(key);
-    }
-
-    const base = color === "pink" ? COLORS.pink : COLORS.cyan;
-    const dark = color === "pink" ? COLORS.pinkDark : COLORS.cyanDark;
-    const width = size * 1.16;
-    const height = size * 1.18;
-    const earWidth = size * 0.18;
-    const earHeight = size * 0.28;
-    const padding = 6;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(width + padding * 2);
-    canvas.height = Math.ceil(height + earHeight + padding * 2);
-    const ctx = canvas.getContext("2d");
-    const bodyX = padding;
-    const bodyY = padding + earHeight * 0.7;
-
-    roundedRect(ctx, bodyX, bodyY + 2, width, height - 2, size * 0.34);
-    ctx.fillStyle = dark;
-    ctx.fill();
-
-    roundedRect(ctx, bodyX, bodyY, width, height - 4, size * 0.34);
-    ctx.fillStyle = base;
-    ctx.fill();
-
-    roundedRect(ctx, bodyX + 7, bodyY + 5, width - 14, height * 0.36, size * 0.24);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
-    ctx.fill();
-
-    roundedRect(ctx, bodyX + width * 0.22, padding, earWidth, earHeight, 4);
-    ctx.fillStyle = dark;
-    ctx.fill();
-    roundedRect(ctx, bodyX + width * 0.58, padding, earWidth, earHeight, 4);
-    ctx.fill();
-
-    this.spriteCache.set(key, canvas);
-    return canvas;
+    });
   }
 
   advanceTime(ms) {
@@ -1271,6 +1685,8 @@ class Game {
   renderGameToText() {
     return JSON.stringify({
       mode: this.gameState,
+      scene: "reference_reskin",
+      source: "Ref.png",
       coordinateSystem: {
         origin: "top-left",
         xDirection: "right",
@@ -1278,20 +1694,23 @@ class Game {
         units: "canvas pixels",
       },
       remainingBlocks: this.remainingBlocks,
+      blocksTotal: this.blocks.length,
       blocksByColor: {
-        pink: this.level.blocks.filter((block) => block.alive && block.color === "pink").length,
-        cyan: this.level.blocks.filter((block) => block.alive && block.color === "cyan").length,
+        green: this.blocks.filter((block) => block.alive && block.color === "green").length,
+        black: this.blocks.filter((block) => block.alive && block.color === "black").length,
       },
       units: this.units.map((unit) => ({
         id: unit.id,
         color: unit.color,
         ammo: unit.ammo,
-        state: unit.state,
         slotIndex: unit.slotIndex,
         x: Number(unit.position.x.toFixed(1)),
         y: Number(unit.position.y.toFixed(1)),
       })),
-      shooterCards: this.shooterCards.map((card) => ({
+      shooterCards: this.cards.map((card) => ({
+        index: card.index,
+        lane: card.lane,
+        row: card.row,
         color: card.color,
         ammo: card.ammo,
         used: card.used,
@@ -1299,11 +1718,6 @@ class Game {
         y: card.y,
         w: card.w,
         h: card.h,
-      })),
-      restartButton: this.layout.restartRect,
-      slotState: this.conveyor.slots.map((slot, index) => ({
-        index,
-        occupied: slot.occupiedBy !== null,
       })),
     });
   }
