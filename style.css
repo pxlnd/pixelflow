@@ -99,7 +99,7 @@ body {
 
 .debug-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -169,7 +169,10 @@ body {
 #debug6,
 #debugReset,
 #debugExport,
-#debugExportLevel {
+#debugExportLevel,
+#debugImageLevelToggle,
+#debugImageCreate,
+#debugImageRefresh {
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.14);
@@ -183,8 +186,104 @@ body {
 #debug6:active,
 #debugReset:active,
 #debugExport:active,
-#debugExportLevel:active {
+#debugExportLevel:active,
+#debugImageLevelToggle:active,
+#debugImageCreate:active,
+#debugImageRefresh:active {
   transform: translateY(1px);
+}
+
+.debug-image-level.is-collapsed {
+  display: none;
+}
+
+.debug-note {
+  margin: 0;
+  font: 700 11px/1.35 Arial, sans-serif;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.debug-file-picker {
+  display: block;
+}
+
+.debug-file-picker input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.debug-file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 34px;
+  border: 1px dashed rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font: 700 12px/1 Arial, sans-serif;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.debug-file-name {
+  min-height: 14px;
+  font: 700 11px/1.3 Arial, sans-serif;
+  color: rgba(255, 255, 255, 0.82);
+  word-break: break-word;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.debug-number {
+  display: grid;
+  gap: 4px;
+}
+
+.debug-number > span {
+  font: 700 11px/1 Arial, sans-serif;
+  opacity: 0.96;
+}
+
+.debug-number input {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(4, 10, 16, 0.5);
+  color: #ffffff;
+  font: 700 12px/1.2 Arial, sans-serif;
+  padding: 7px 8px;
+}
+
+.debug-generator-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.debug-status {
+  min-height: 28px;
+  font: 700 11px/1.35 Arial, sans-serif;
+  color: rgba(255, 255, 255, 0.76);
+}
+
+.debug-status[data-tone="error"] {
+  color: #ffb3b3;
+}
+
+.debug-status[data-tone="success"] {
+  color: #c4ffae;
 }
 
 @media (max-width: 920px) {

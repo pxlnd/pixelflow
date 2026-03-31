@@ -18,6 +18,7 @@
         <button id="debugReset" type="button" aria-label="Сбросить настройки отладки">сброс</button>
         <button id="debugExport" type="button" aria-label="Сохранить настройки в JSON">debug json</button>
         <button id="debugExportLevel" type="button" aria-label="Сохранить текущий уровень">уровень json</button>
+        <button id="debugImageLevelToggle" type="button" aria-label="Открыть генератор уровня">генератор</button>
       </div>
 
       <div class="debug-section">
@@ -30,6 +31,41 @@
           <span>Тема</span>
           <select id="debugThemeSelect" aria-label="Выбор темы"></select>
         </label>
+      </div>
+
+      <div id="debugImageLevelSection" class="debug-section debug-image-level is-collapsed">
+        <div class="debug-section-title">Генератор уровня</div>
+        <div class="debug-note">Загрузи картинку, задай сетку и собери новый уровень прямо на текущей сцене.</div>
+        <label class="debug-file-picker" for="debugImageUpload">
+          <span class="debug-file-button">загрузить картинку</span>
+          <input id="debugImageUpload" type="file" accept="image/*" aria-label="Загрузить картинку для генерации уровня">
+        </label>
+        <div id="debugImageFileName" class="debug-file-name">файл не выбран</div>
+        <div class="debug-grid">
+          <label class="debug-number" for="debugImageGridCols">
+            <span>Колонки</span>
+            <input id="debugImageGridCols" type="number" min="4" max="40" step="1" value="18" inputmode="numeric">
+          </label>
+          <label class="debug-number" for="debugImageGridRows">
+            <span>Ряды</span>
+            <input id="debugImageGridRows" type="number" min="4" max="40" step="1" value="18" inputmode="numeric">
+          </label>
+        </div>
+        <label class="debug-control" for="debugImageScale">
+          <span>Размер рисунка</span>
+          <input id="debugImageScale" type="range" min="0.50" max="3.00" step="0.05" value="1.00">
+          <output id="debugImageScaleValue" for="debugImageScale">1.00x</output>
+        </label>
+        <label class="debug-control" for="debugImageOffsetY">
+          <span>Смещение рисунка по Y</span>
+          <input id="debugImageOffsetY" type="range" min="-240" max="240" step="1" value="0">
+          <output id="debugImageOffsetYValue" for="debugImageOffsetY">0</output>
+        </label>
+        <div class="debug-generator-actions">
+          <button id="debugImageCreate" type="button" aria-label="Создать уровень из картинки">создать</button>
+          <button id="debugImageRefresh" type="button" aria-label="Обновить картинку в новой сетке">обновить</button>
+        </div>
+        <div id="debugImageStatus" class="debug-status" aria-live="polite">Выбери изображение, затем укажи сетку и нажми создать.</div>
       </div>
 
       <div class="debug-section">
@@ -144,6 +180,9 @@
   <script src="game-data/themes/theme-classic.js?v=20260331-2"></script>
   <script src="game-data/themes/theme-sunset.js?v=20260331-2"></script>
   <script src="game-data/themes/index.js?v=20260331-2"></script>
+  <script src="game-data/levels/level-1.js?v=20260331-3"></script>
+  <script src="game-data/levels/level-3.js?v=20260331-3"></script>
+  <script src="game-data/levels/index.js?v=20260331-3"></script>
   <script src="main.js?v=20260331-2"></script>
 </body>
 </html>

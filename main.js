@@ -4,6 +4,12 @@ const THEME_REGISTRY = window.PIXELFLOW_THEMES || {
   getThemeConfig: () => null,
 };
 
+const LEVEL_REGISTRY = window.PIXELFLOW_LEVELS || {
+  LEVEL_DEFINITIONS: [],
+  DEFAULT_LEVEL_ID: "1",
+  getLevelConfig: () => null,
+};
+
 const BUILTIN_FALLBACK_LEVEL = {
   id: "1",
   name: "Level 1",
@@ -102,6 +108,8 @@ let LEVEL_DEFINITIONS = [];
 const THEME_DEFINITIONS = Array.isArray(THEME_REGISTRY.THEME_DEFINITIONS) ? THEME_REGISTRY.THEME_DEFINITIONS : [];
 let DEFAULT_LEVEL_ID = BUILTIN_FALLBACK_LEVEL.id;
 const DEFAULT_THEME_ID = String(THEME_REGISTRY.DEFAULT_THEME_ID || BUILTIN_FALLBACK_THEME.id);
+const LEVEL_DEFINITIONS_FALLBACK = Array.isArray(LEVEL_REGISTRY.LEVEL_DEFINITIONS) ? LEVEL_REGISTRY.LEVEL_DEFINITIONS : [];
+const getLevelConfigRaw = typeof LEVEL_REGISTRY.getLevelConfig === "function" ? LEVEL_REGISTRY.getLevelConfig : () => null;
 const getThemeConfigRaw = typeof THEME_REGISTRY.getThemeConfig === "function" ? THEME_REGISTRY.getThemeConfig : () => null;
 let LEVEL_MAP = new Map();
 
@@ -109,6 +117,22 @@ function rebuildLevelRegistry(levelDefinitions) {
   LEVEL_DEFINITIONS = Array.isArray(levelDefinitions) ? levelDefinitions.filter(isValidLevelConfig) : [];
   DEFAULT_LEVEL_ID = String(LEVEL_DEFINITIONS[0]?.id || BUILTIN_FALLBACK_LEVEL.id);
   LEVEL_MAP = new Map(LEVEL_DEFINITIONS.map((level) => [String(level.id), level]));
+}
+
+function upsertLevelDefinition(levelConfig) {
+  if (!isValidLevelConfig(levelConfig)) {
+    return;
+  }
+  const normalized = cloneData(levelConfig);
+  const levelId = String(normalized.id || "");
+  normalized.id = levelId;
+  const existingIndex = LEVEL_DEFINITIONS.findIndex((level) => String(level?.id || "") === levelId);
+  if (existingIndex >= 0) {
+    LEVEL_DEFINITIONS[existingIndex] = normalized;
+  } else {
+    LEVEL_DEFINITIONS.push(normalized);
+  }
+  LEVEL_MAP.set(levelId, normalized);
 }
 
 function isValidLevelConfig(config) {
@@ -124,9 +148,23 @@ const getLevelConfig = (levelId) => {
   if (isValidLevelConfig(config)) {
     return cloneData(config);
   }
+  try {
+    const rawConfig = getLevelConfigRaw(String(levelId || ""));
+    if (isValidLevelConfig(rawConfig)) {
+      return cloneData(rawConfig);
+    }
+  } catch {
+    // Ignore legacy registry errors and continue to local fallback.
+  }
   const fallbackById = LEVEL_DEFINITIONS.find((level) => level && level.id === DEFAULT_LEVEL_ID);
   if (isValidLevelConfig(fallbackById)) {
     return cloneData(fallbackById);
+  }
+  const fallbackRegistryLevel =
+    LEVEL_DEFINITIONS_FALLBACK.find((level) => String(level?.id || "") === String(DEFAULT_LEVEL_ID))
+    || LEVEL_DEFINITIONS_FALLBACK[0];
+  if (isValidLevelConfig(fallbackRegistryLevel)) {
+    return cloneData(fallbackRegistryLevel);
   }
   return BUILTIN_FALLBACK_LEVEL;
 };
@@ -290,6 +328,7 @@ const DEBUG_DEFAULTS = {
 
 const LEVELS_PATH = "game-data/levels";
 const MAX_AUTOLOAD_LEVELS = 50;
+const MAX_AUTOLOAD_MISSES_IN_A_ROW = 5;
 
 async function loadLevelJSONByNumber(levelNumber) {
   try {
@@ -303,8 +342,20 @@ async function loadLevelJSONByNumber(levelNumber) {
       return null;
     }
     const normalizedLevel = cloneData(level);
-    normalizedLevel.id = String(normalizedLevel.id || levelNumber);
-    normalizedLevel.name = String(normalizedLevel.name || `Level ${normalizedLevel.id}`);
+    normalizedLevel.id = String(levelNumber);
+    normalizedLevel.name = isPositiveIntegerString(normalizedLevel.name)
+      ? `Level ${levelNumber}`
+      : String(normalizedLevel.name || `Level ${levelNumber}`);
+    if (
+      /^generated\b/i.test(normalizedLevel.name)
+      || /^debug\b/i.test(normalizedLevel.name)
+      || isGenericLevelName(normalizedLevel.name)
+    ) {
+      normalizedLevel.name = `Level ${levelNumber}`;
+    }
+    if (normalizedLevel.pixelArt && typeof normalizedLevel.pixelArt === "object" && !normalizedLevel.pixelArt.id) {
+      normalizedLevel.pixelArt.id = `level-${levelNumber}-art`;
+    }
     return isValidLevelConfig(normalizedLevel) ? normalizedLevel : null;
   } catch {
     return null;
@@ -313,11 +364,17 @@ async function loadLevelJSONByNumber(levelNumber) {
 
 async function loadLevelDefinitions() {
   const levels = [];
+  let missesInARow = 0;
   for (let levelNumber = 1; levelNumber <= MAX_AUTOLOAD_LEVELS; levelNumber += 1) {
     const level = await loadLevelJSONByNumber(levelNumber);
     if (!level) {
-      break;
+      missesInARow += 1;
+      if (missesInARow >= MAX_AUTOLOAD_MISSES_IN_A_ROW) {
+        break;
+      }
+      continue;
     }
+    missesInARow = 0;
     levels.push(level);
   }
   return levels;
@@ -343,6 +400,190 @@ const DEFAULT_COLORS = {
   slotPulse: "rgba(255, 235, 140, 0.7)",
   textGlow: "rgba(0, 0, 0, 0.45)",
 };
+
+const BLOCK_CHAR_TO_COLOR = {
+  G: "green",
+  B: "black",
+  K: "black",
+  W: "white",
+  Y: "yellow",
+  R: "red",
+  ".": null,
+  " ": null,
+  "_": null,
+};
+
+const BLOCK_COLOR_TO_PATTERN_CHAR = {
+  green: "G",
+  black: "K",
+  white: "W",
+  yellow: "Y",
+  red: "R",
+};
+
+const BLOCK_COLOR_TO_RGB = {
+  green: { r: 129, g: 195, b: 65 },
+  black: { r: 42, g: 42, b: 42 },
+  white: { r: 245, g: 247, b: 251 },
+  yellow: { r: 255, g: 215, b: 64 },
+  red: { r: 239, g: 64, b: 50 },
+};
+
+const BLOCK_COLOR_LABELS = {
+  green: "зелёный",
+  black: "чёрный",
+  white: "белый",
+  yellow: "жёлтый",
+  red: "красный",
+};
+
+const DEBUG_IMAGE_LEVEL_ID = "debug-image-level";
+const DEBUG_IMAGE_GRID_MIN = 4;
+const DEBUG_IMAGE_GRID_MAX = 40;
+const DEBUG_IMAGE_SCALE_MIN = 0.5;
+const DEBUG_IMAGE_SCALE_MAX = 3;
+
+const BLOCK_COLOR_CONFIG = {
+  green: {
+    styleKeys: ["mint", "sky"],
+    sprite: { base: "#79be3d", mid: "#66a831", dark: "#4f8224" },
+    face: "#81c341",
+    projectile: {
+      core: "#7ede55",
+      light: "#dcffc2",
+      glowMid: "rgba(164,255,128,0.22)",
+      glowEnd: "rgba(190,255,160,0.55)",
+      auraInner: "rgba(212,255,184,0.75)",
+      auraMid: "rgba(160,244,105,0.34)",
+    },
+    ring: "rgba(163, 243, 111, 0.85)",
+    slotBurst: "rgba(155, 244, 111, 0.72)",
+    particle: "#8fe266",
+    accentRgb: "160, 255, 105",
+  },
+  black: {
+    styleKeys: ["coral", "gold"],
+    sprite: { base: "#3a3a3a", mid: "#2f2f2f", dark: "#1d1d1d" },
+    face: "#2a2a2a",
+    projectile: {
+      core: "#222222",
+      light: "#f2f2f2",
+      glowMid: "rgba(255,255,255,0.24)",
+      glowEnd: "rgba(255,255,255,0.62)",
+      auraInner: "rgba(255,255,255,0.78)",
+      auraMid: "rgba(245,245,245,0.30)",
+    },
+    ring: "rgba(236, 236, 236, 0.8)",
+    slotBurst: "rgba(255, 235, 140, 0.7)",
+    particle: "#161616",
+    accentRgb: "255, 255, 255",
+  },
+  white: {
+    styleKeys: ["pearl", "cloud"],
+    sprite: { base: "#f8fafc", mid: "#e8edf3", dark: "#cfd7e3" },
+    face: "#f5f7fb",
+    projectile: {
+      core: "#d7dee8",
+      light: "#ffffff",
+      glowMid: "rgba(255,255,255,0.34)",
+      glowEnd: "rgba(255,255,255,0.68)",
+      auraInner: "rgba(255,255,255,0.86)",
+      auraMid: "rgba(235,242,255,0.34)",
+    },
+    ring: "rgba(255, 255, 255, 0.96)",
+    slotBurst: "rgba(255, 255, 255, 0.82)",
+    particle: "#eef3fb",
+    accentRgb: "255, 255, 255",
+  },
+  yellow: {
+    styleKeys: ["sun", "lemon"],
+    sprite: { base: "#ffd84c", mid: "#f7c92d", dark: "#d8a819" },
+    face: "#ffd740",
+    projectile: {
+      core: "#e3b414",
+      light: "#fff4b0",
+      glowMid: "rgba(255,231,116,0.24)",
+      glowEnd: "rgba(255,241,173,0.58)",
+      auraInner: "rgba(255,248,192,0.76)",
+      auraMid: "rgba(255,220,92,0.34)",
+    },
+    ring: "rgba(255, 227, 102, 0.9)",
+    slotBurst: "rgba(255, 223, 120, 0.76)",
+    particle: "#f2c31d",
+    accentRgb: "255, 224, 96",
+  },
+  red: {
+    styleKeys: ["rose", "ember"],
+    sprite: { base: "#ff6356", mid: "#ee4031", dark: "#c5271c" },
+    face: "#ef4032",
+    projectile: {
+      core: "#d63124",
+      light: "#ffbeb8",
+      glowMid: "rgba(255,120,108,0.26)",
+      glowEnd: "rgba(255,178,170,0.58)",
+      auraInner: "rgba(255,210,206,0.74)",
+      auraMid: "rgba(255,101,89,0.34)",
+    },
+    ring: "rgba(255, 123, 112, 0.88)",
+    slotBurst: "rgba(255, 138, 128, 0.74)",
+    particle: "#ee4031",
+    accentRgb: "255, 120, 108",
+  },
+};
+
+function getBlockColorConfig(color) {
+  return BLOCK_COLOR_CONFIG[color] || BLOCK_COLOR_CONFIG.green;
+}
+
+function getPatternCellColor(cell) {
+  if (cell === undefined || cell === null) {
+    return null;
+  }
+  const normalized = String(cell).charAt(0).toUpperCase();
+  return Object.prototype.hasOwnProperty.call(BLOCK_CHAR_TO_COLOR, normalized)
+    ? BLOCK_CHAR_TO_COLOR[normalized]
+    : null;
+}
+
+function getPatternCellChar(color) {
+  return BLOCK_COLOR_TO_PATTERN_CHAR[color] || ".";
+}
+
+function clampDebugImageGridSize(value) {
+  return clamp(Math.round(Number(value) || 18), DEBUG_IMAGE_GRID_MIN, DEBUG_IMAGE_GRID_MAX);
+}
+
+function clampDebugImageScale(value) {
+  return clamp(Number(value) || 1, DEBUG_IMAGE_SCALE_MIN, DEBUG_IMAGE_SCALE_MAX);
+}
+
+function clampDebugImageOffsetY(value) {
+  return clamp(Math.round(Number(value) || 0), -240, 240);
+}
+
+function isPositiveIntegerString(value) {
+  return /^[1-9]\d*$/.test(String(value || "").trim());
+}
+
+function isGenericLevelName(value) {
+  return /^level\s+\d+$/i.test(String(value || "").trim());
+}
+
+function getNearestBlockColor(r, g, b) {
+  let bestColor = "green";
+  let bestDistance = Infinity;
+  for (const [color, sample] of Object.entries(BLOCK_COLOR_TO_RGB)) {
+    const dr = r - sample.r;
+    const dg = g - sample.g;
+    const db = b - sample.b;
+    const distanceSq = dr * dr + dg * dg + db * db;
+    if (distanceSq < bestDistance) {
+      bestDistance = distanceSq;
+      bestColor = color;
+    }
+  }
+  return bestColor;
+}
 
 let CURRENT_LEVEL = getLevelConfig(DEFAULT_LEVEL_ID);
 let CURRENT_THEME = getThemeConfig(DEFAULT_THEME_ID);
@@ -461,6 +702,30 @@ function roundedRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, radius);
   ctx.arcTo(x, y, x + w, y, radius);
   ctx.closePath();
+}
+
+function createBufferCanvas(width, height, alpha = true) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  const ctx = canvas.getContext("2d", { alpha });
+  if (ctx) {
+    ctx.imageSmoothingEnabled = false;
+  }
+  return { canvas, ctx };
+}
+
+function compactListInPlace(list, updateItem) {
+  let writeIndex = 0;
+  for (let i = 0; i < list.length; i++) {
+    const item = list[i];
+    if (updateItem(item, i)) {
+      list[writeIndex] = item;
+      writeIndex += 1;
+    }
+  }
+  list.length = writeIndex;
+  return list;
 }
 
 function createRoundedRectPath(x, y, w, h, r, samplesPerArc = 18) {
@@ -596,7 +861,7 @@ class Unit {
     this.color = color;
     this.ammo = ammo;
     this.maxAmmo = ammo;
-    this.styleKey = styleKey || (color === "green" ? "mint" : "gold");
+    this.styleKey = styleKey || getBlockColorConfig(color).styleKeys[0];
     this.label = label ?? id;
     this.slotIndex = null;
     this.speed = TRACK_UNIT_SPEED;
@@ -983,11 +1248,8 @@ class CardManager {
     const styleIndexByColor = {};
     for (const card of cards) {
       styleIndexByColor[card.color] = styleIndexByColor[card.color] || 0;
-      if (card.color === "green") {
-        card.styleKey = styleIndexByColor[card.color] % 2 === 0 ? "mint" : "sky";
-      } else {
-        card.styleKey = styleIndexByColor[card.color] % 2 === 0 ? "coral" : "gold";
-      }
+      const styleKeys = getBlockColorConfig(card.color).styleKeys;
+      card.styleKey = styleKeys[styleIndexByColor[card.color] % styleKeys.length] || styleKeys[0];
       styleIndexByColor[card.color] += 1;
     }
 
@@ -1200,8 +1462,9 @@ class Game {
     this.dpr = 1;
     this.currentLevelId = CURRENT_LEVEL.id;
     this.currentThemeId = CURRENT_THEME.id;
-    this.availableLevels = LEVEL_DEFINITIONS.map((level) => ({ id: level.id, name: level.name }));
+    this.availableLevels = [];
     this.availableThemes = THEME_DEFINITIONS.map((theme) => ({ id: theme.id, name: theme.name }));
+    this.refreshAvailableLevels();
 
     this.backButtonImage = new Image();
     this.backButtonImage.src = getThemeAsset("backButton", "ui/back_button.png");
@@ -1224,7 +1487,16 @@ class Game {
       wagon: null,
       wagonMask: null,
       grassTile: null,
+      grassPattern: null,
+      dirtPattern: null,
     };
+
+    const staticSceneLayer = createBufferCanvas(this.width, this.height, false);
+    this.staticSceneLayer = staticSceneLayer.canvas;
+    this.staticSceneCtx = staticSceneLayer.ctx;
+    const blockFieldLayer = createBufferCanvas(this.width, this.height, true);
+    this.blockFieldLayer = blockFieldLayer.canvas;
+    this.blockFieldCtx = blockFieldLayer.ctx;
 
     this.conveyor = new Conveyor();
     this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
@@ -1279,8 +1551,21 @@ class Game {
     this.debugResetButton = document.getElementById("debugReset");
     this.debugExportButton = document.getElementById("debugExport");
     this.debugExportLevelButton = document.getElementById("debugExportLevel");
+    this.debugImageLevelToggleButton = document.getElementById("debugImageLevelToggle");
+    this.debugImageLevelSection = document.getElementById("debugImageLevelSection");
     this.debugLevelSelect = document.getElementById("debugLevelSelect");
     this.debugThemeSelect = document.getElementById("debugThemeSelect");
+    this.debugImageUploadInput = document.getElementById("debugImageUpload");
+    this.debugImageFileName = document.getElementById("debugImageFileName");
+    this.debugImageGridColsInput = document.getElementById("debugImageGridCols");
+    this.debugImageGridRowsInput = document.getElementById("debugImageGridRows");
+    this.debugImageScaleInput = document.getElementById("debugImageScale");
+    this.debugImageScaleValue = document.getElementById("debugImageScaleValue");
+    this.debugImageOffsetYInput = document.getElementById("debugImageOffsetY");
+    this.debugImageOffsetYValue = document.getElementById("debugImageOffsetYValue");
+    this.debugImageCreateButton = document.getElementById("debugImageCreate");
+    this.debugImageRefreshButton = document.getElementById("debugImageRefresh");
+    this.debugImageStatus = document.getElementById("debugImageStatus");
     this.shotBounceSizeInput = document.getElementById("shotBounceSize");
     this.shotBounceSizeValue = document.getElementById("shotBounceSizeValue");
     this.shotBounceSpeedInput = document.getElementById("shotBounceSpeed");
@@ -1319,6 +1604,9 @@ class Game {
     this.card4YOffsetValue = document.getElementById("card4YOffsetValue");
     this.debugPanelVisible = false;
     this.suppressDebugSave = false;
+    this.debugContentSelectorsBound = false;
+    this.debugGeneratedSourceImage = null;
+    this.debugGeneratedBaseLevelId = DEFAULT_LEVEL_ID;
 
     this.loadDebugSettings();
     this.initDebugControls();
@@ -1350,11 +1638,26 @@ class Game {
   buildReferenceAssets() {
     this.sprites.greenTile = this.createBlockSprite("green");
     this.sprites.blackTile = this.createBlockSprite("black");
+    this.sprites.whiteTile = this.createBlockSprite("white");
+    this.sprites.yellowTile = this.createBlockSprite("yellow");
+    this.sprites.redTile = this.createBlockSprite("red");
     this.sprites.holeTile = null;
     this.sprites.fieldGround = null;
     this.sprites.wagon = null;
     this.sprites.wagonMask = null;
     this.sprites.grassTile = null;
+    const boardTheme = CURRENT_THEME.board || {};
+    this.sprites.grassPattern = this.createBackdropPattern(
+      boardTheme.fill || BOARD_FILL_COLOR,
+      boardTheme.grassPalette || ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"],
+      boardTheme.grassShade || "rgba(28, 52, 14, 0.16)"
+    );
+    this.sprites.dirtPattern = this.createBackdropPattern(
+      boardTheme.dirtFill || "#b98c5e",
+      boardTheme.dirtPalette || ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
+      boardTheme.dirtShade || "rgba(64, 40, 22, 0.2)"
+    );
+    this.rebuildStaticSceneLayer();
   }
 
   createBlockSprite(color) {
@@ -1366,10 +1669,10 @@ class Game {
     if (!tileCtx) {
       return null;
     }
-    const isGreen = color === "green";
-    const base = isGreen ? "#79be3d" : "#3a3a3a";
-    const mid = isGreen ? "#66a831" : "#2f2f2f";
-    const dark = isGreen ? "#4f8224" : "#1d1d1d";
+    const palette = getBlockColorConfig(color).sprite;
+    const base = palette.base;
+    const mid = palette.mid;
+    const dark = palette.dark;
     const grad = tileCtx.createLinearGradient(0, 0, size, size);
     grad.addColorStop(0, base);
     grad.addColorStop(0.56, mid);
@@ -1389,6 +1692,72 @@ class Game {
     return tile;
   }
 
+  createBackdropPattern(fillColor, palette, shadeDark) {
+    const tile = document.createElement("canvas");
+    const patch = 64;
+    const sub = 16;
+    tile.width = patch;
+    tile.height = patch;
+    const tileCtx = tile.getContext("2d", { alpha: false });
+    if (!tileCtx) {
+      return null;
+    }
+    tileCtx.imageSmoothingEnabled = false;
+    tileCtx.fillStyle = fillColor;
+    tileCtx.fillRect(0, 0, patch, patch);
+    const seed = palette.length * 13 + fillColor.length;
+    for (let sy = 0; sy < patch; sy += sub) {
+      for (let sx = 0; sx < patch; sx += sub) {
+        const tone = Math.abs(seed + sx / sub + (sy / sub) * 3) % palette.length;
+        tileCtx.fillStyle = palette[tone];
+        tileCtx.fillRect(sx, sy, sub, sub);
+      }
+    }
+    tileCtx.fillStyle = "rgba(255,255,255,0.12)";
+    tileCtx.fillRect(0, 0, patch, 4);
+    tileCtx.fillRect(0, 0, 4, patch);
+    tileCtx.fillStyle = shadeDark;
+    tileCtx.fillRect(0, patch - 4, patch, 4);
+    tileCtx.fillRect(patch - 4, 0, 4, patch);
+    return tile;
+  }
+
+  rebuildStaticSceneLayer() {
+    if (!this.staticSceneCtx) {
+      return;
+    }
+    if (this.staticSceneLayer.width !== this.width || this.staticSceneLayer.height !== this.height) {
+      this.staticSceneLayer.width = this.width;
+      this.staticSceneLayer.height = this.height;
+      this.staticSceneCtx.imageSmoothingEnabled = false;
+    }
+    this.staticSceneCtx.clearRect(0, 0, this.width, this.height);
+    this.drawBackground(this.staticSceneCtx);
+    this.drawWagonLayer(this.staticSceneCtx);
+    this.drawBottomCleanup(this.staticSceneCtx);
+    this.drawSlotState(this.staticSceneCtx);
+  }
+
+  rebuildBlockFieldLayer() {
+    if (!this.blockFieldCtx) {
+      return;
+    }
+    if (this.blockFieldLayer.width !== this.width || this.blockFieldLayer.height !== this.height) {
+      this.blockFieldLayer.width = this.width;
+      this.blockFieldLayer.height = this.height;
+      this.blockFieldCtx.imageSmoothingEnabled = false;
+    }
+    this.blockFieldCtx.clearRect(0, 0, this.width, this.height);
+    for (const block of this.blocks) {
+      this.drawVolumetricBlock(this.blockFieldCtx, block, block.x, block.y, {
+        alpha: block.alive ? 0.96 : 0.24,
+        shadowOpacity: block.alive ? 0.22 : 0.12,
+        bevelStrength: block.alive ? 0.26 : 0.14,
+        offsetY: 0,
+      });
+    }
+  }
+
   drawTiledBackdrop(ctx, rect, fillColor, palette, shadeDark) {
     ctx.save();
     ctx.beginPath();
@@ -1397,31 +1766,15 @@ class Game {
 
     ctx.fillStyle = fillColor;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-
-    const patch = 64;
-    const sub = 16;
-    for (let y = rect.y; y < rect.y + rect.h; y += patch) {
-      for (let x = rect.x; x < rect.x + rect.w; x += patch) {
-        const tileX = Math.floor(x / patch);
-        const tileY = Math.floor(y / patch);
-        const seed = tileX * 17 + tileY * 31;
-        ctx.fillStyle = palette[Math.abs(seed) % palette.length];
-        ctx.fillRect(x, y, patch, patch);
-
-        for (let sy = 0; sy < patch; sy += sub) {
-          for (let sx = 0; sx < patch; sx += sub) {
-            const tone = Math.abs(seed + sx / sub + (sy / sub) * 3) % palette.length;
-            ctx.fillStyle = palette[tone];
-            ctx.fillRect(x + sx, y + sy, sub, sub);
-          }
-        }
-
-        ctx.fillStyle = "rgba(255,255,255,0.12)";
-        ctx.fillRect(x, y, patch, 4);
-        ctx.fillRect(x, y, 4, patch);
-        ctx.fillStyle = shadeDark;
-        ctx.fillRect(x, y + patch - 4, patch, 4);
-        ctx.fillRect(x + patch - 4, y, 4, patch);
+    const patternTile =
+      fillColor === ((CURRENT_THEME.board || {}).dirtFill || "#b98c5e")
+        ? this.sprites.dirtPattern
+        : this.sprites.grassPattern;
+    if (patternTile) {
+      const pattern = ctx.createPattern(patternTile, "repeat");
+      if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
       }
     }
 
@@ -1450,22 +1803,32 @@ class Game {
     );
   }
 
-  drawViewportBackdrop(ctx) {
-    const worldRect = {
+  getViewportWorldRect() {
+    return {
       x: -this.viewportOffsetX / this.viewportScale,
       y: -this.viewportOffsetY / this.viewportScale,
       w: this.screenWidth / this.viewportScale,
       h: this.screenHeight / this.viewportScale,
     };
+  }
+
+  drawViewportBackdrop(ctx) {
+    const worldRect = this.getViewportWorldRect();
     this.drawGrassBackdrop(ctx, worldRect);
   }
 
   updateViewportTransform() {
     const scaleX = this.screenWidth / this.width;
     const scaleY = this.screenHeight / this.height;
+    const tuning = this.getViewportAdaptiveTuning();
     this.viewportScale = Math.max(0.0001, Math.min(scaleX, scaleY));
     this.viewportOffsetX = Math.round((this.screenWidth - this.width * this.viewportScale) * 0.5);
-    this.viewportOffsetY = Math.round((this.screenHeight - this.height * this.viewportScale) * 0.5);
+    const freeY = this.screenHeight - this.height * this.viewportScale;
+    if (Number.isFinite(tuning.viewportTopPadding)) {
+      this.viewportOffsetY = Math.round(clamp(tuning.viewportTopPadding, 0, Math.max(0, freeY)));
+    } else {
+      this.viewportOffsetY = Math.round(freeY * 0.5);
+    }
   }
 
   restart() {
@@ -1500,6 +1863,7 @@ class Game {
     this.gameState = "playing";
     this.remainingBlocks = this.blocks.length;
     this.loseCloseRect = this.getLoseCloseRect();
+    this.rebuildBlockFieldLayer();
     this.lastTimestamp = performance.now();
     this.invalidate(true);
   }
@@ -1510,8 +1874,11 @@ class Game {
 
     for (let row = 0; row < LAYOUT.fieldRows; row++) {
       for (let col = 0; col < LAYOUT.fieldCols; col++) {
-        id += 1;
         const blockColor = this.getCellColor(col, row);
+        if (!blockColor) {
+          continue;
+        }
+        id += 1;
         const block = new Block(id, col, row, blockColor);
         const key = `${col},${row}`;
         if (this.spiralOrderByCell.has(key)) {
@@ -1602,9 +1969,11 @@ class Game {
         slotYOffsetAdd: 0,
         cardYOffsetAllAdd: 0,
         cardOffsetMul: 1,
+        cardLaneSpacingMul: 1,
         backButtonScaleMul: 1,
         topLevelPanelScaleMul: 1,
         topCoinsPanelScaleMul: 1,
+        viewportTopPadding: null,
       };
     }
 
@@ -1612,15 +1981,17 @@ class Game {
     const compactness = clamp((430 - shortSide) / 210, 0, 1);
     if (isPortrait) {
       return {
-        playfieldScaleMul: 1.1 + compactness * 0.1,
-        topUiYOffsetAdd: -26 - compactness * 18,
-        trackYOffsetAdd: -24 - compactness * 22,
-        slotYOffsetAdd: -24 - compactness * 22,
-        cardYOffsetAllAdd: -132 - compactness * 68,
-        cardOffsetMul: 0.34,
-        backButtonScaleMul: 1.08,
-        topLevelPanelScaleMul: 0.94,
-        topCoinsPanelScaleMul: 0.98,
+        playfieldScaleMul: 1.04 - compactness * 0.02,
+        topUiYOffsetAdd: -8 - compactness * 6,
+        trackYOffsetAdd: 112 + compactness * 52,
+        slotYOffsetAdd: 182 + compactness * 68,
+        cardYOffsetAllAdd: 188 + compactness * 96,
+        cardOffsetMul: 0.62,
+        cardLaneSpacingMul: 0.82,
+        backButtonScaleMul: 0.94,
+        topLevelPanelScaleMul: 0.9,
+        topCoinsPanelScaleMul: 0.92,
+        viewportTopPadding: 16 + compactness * 12,
       };
     }
 
@@ -1631,9 +2002,11 @@ class Game {
       slotYOffsetAdd: -10,
       cardYOffsetAllAdd: -48,
       cardOffsetMul: 0.7,
+      cardLaneSpacingMul: 1,
       backButtonScaleMul: 1.04,
       topLevelPanelScaleMul: 0.96,
       topCoinsPanelScaleMul: 0.98,
+      viewportTopPadding: null,
     };
   }
 
@@ -1644,6 +2017,7 @@ class Game {
     const effectiveSlotYOffset = SLOT_Y_OFFSET + tuning.slotYOffsetAdd;
     const effectiveCardYOffsetAll = CARD_Y_OFFSET_ALL + tuning.cardYOffsetAllAdd;
     const effectiveCardOffsetMul = tuning.cardOffsetMul;
+    const effectiveCardLaneSpacingMul = tuning.cardLaneSpacingMul;
     const effectivePlayfieldScale = PLAYFIELD_SCALE * tuning.playfieldScaleMul;
     const effectiveBackButtonScale = BACK_BUTTON_SCALE * tuning.backButtonScaleMul;
     const effectiveTopLevelPanelScale = TOP_LEVEL_PANEL_SCALE * tuning.topLevelPanelScaleMul;
@@ -1709,11 +2083,14 @@ class Game {
 
     const dynamicCardLayouts = BASE_LAYOUT.cards.map((baseCard, index) => ({
       ...baseCard,
+      x: Math.round(baseFieldCenterX + (baseCard.x + baseCard.w * 0.5 - baseFieldCenterX) * effectiveCardLaneSpacingMul - baseCard.w * 0.5),
       y: Math.round(baseCard.y + effectiveCardYOffsetAll + getCardYOffsetByIndex(index) * effectiveCardOffsetMul),
     }));
     this.cardManager.setBaseLayouts(dynamicCardLayouts);
     this.cardManager.setQueueCardCount(this.cardManager.queueCardCount);
     this.cards = this.cardManager.normalizeQueues(this.cards);
+    this.rebuildStaticSceneLayer();
+    this.rebuildBlockFieldLayer();
 
     this.invalidate(false);
   }
@@ -1899,17 +2276,41 @@ class Game {
   }
 
   getCurrentLevelExport() {
+    const levelNumber = this.getSuggestedExportLevelNumber();
+    const level = cloneData(CURRENT_LEVEL);
+    level.id = String(levelNumber);
+    level.name = `Level ${levelNumber}`;
+    if (level.pixelArt && typeof level.pixelArt === "object") {
+      level.pixelArt.id = `level-${levelNumber}-art`;
+    }
     return {
       exportedAt: new Date().toISOString(),
-      level: cloneData(CURRENT_LEVEL),
+      levelNumber,
+      level,
     };
+  }
+
+  getSuggestedExportLevelNumber() {
+    if (isPositiveIntegerString(this.currentLevelId)) {
+      return Number(this.currentLevelId);
+    }
+    const used = new Set(
+      this.availableLevels
+        .map((level) => String(level.id || ""))
+        .filter((id) => isPositiveIntegerString(id))
+        .map((id) => Number(id))
+    );
+    let candidate = 1;
+    while (used.has(candidate)) {
+      candidate += 1;
+    }
+    return candidate;
   }
 
   async exportCurrentLevelJSON() {
     const payload = this.getCurrentLevelExport();
     const json = `${JSON.stringify(payload, null, 2)}\n`;
-    const levelId = String(payload.level?.id || this.currentLevelId || "level").replace(/[^a-z0-9-_]+/gi, "-");
-    const fileName = `${levelId}.json`;
+    const fileName = `${payload.levelNumber}.json`;
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -2014,14 +2415,12 @@ class Game {
 
   getCellColor(col, row) {
     const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
-    const fallbackCell = fallbackRow[col];
-    if (fallbackCell === "G") {
-      return "green";
+    const fallbackCell = fallbackRow[col] || ".";
+    const parsedColor = getPatternCellColor(fallbackCell);
+    if (parsedColor !== null) {
+      return parsedColor;
     }
-    if (fallbackCell === "B") {
-      return "black";
-    }
-    return (col * 5 + row * 3) % 7 < 3 ? "green" : "black";
+    return null;
   }
 
   spawnUnit(cardIndex) {
@@ -2163,6 +2562,7 @@ class Game {
   }
 
   spawnImpactRing(x, y, color, size = 1) {
+    const colorConfig = getBlockColorConfig(color);
     this.impactRings.push({
       x,
       y,
@@ -2170,12 +2570,13 @@ class Game {
       maxLife: 0.24,
       startR: 8,
       endR: 30 + size * 18,
-      color: color === "green" ? COLORS.ringGreen : COLORS.ringBlack,
+      color: colorConfig.ring,
       lineWidth: 3.2 - Math.min(1.6, size * 0.6),
     });
   }
 
   spawnSlotBurst(x, y, color) {
+    const colorConfig = getBlockColorConfig(color);
     this.slotBursts.push({
       x,
       y,
@@ -2183,7 +2584,7 @@ class Game {
       maxLife: 0.32,
       r: 10,
       maxR: 56,
-      color: color === "green" ? "rgba(155, 244, 111, 0.72)" : COLORS.slotPulse,
+      color: colorConfig.slotBurst,
     });
   }
 
@@ -2406,6 +2807,7 @@ class Game {
     block.alive = true;
     block.hitFlash = 1;
     this.remainingBlocks -= 1;
+    this.rebuildBlockFieldLayer();
 
     const center = this.blockCenter(block);
     this.spawnParticles(center.x, center.y, color, 28);
@@ -2457,7 +2859,7 @@ class Game {
   }
 
   spawnParticles(x, y, color, amount) {
-    const particleColor = color === "green" ? COLORS.particleGreen : COLORS.particleBlack;
+    const particleColor = getBlockColorConfig(color).particle;
     for (let i = 0; i < amount; i++) {
       const angle = (Math.PI * 2 * i) / amount + Math.random() * 0.3;
       const speed = 36 + Math.random() * 80;
@@ -2549,6 +2951,7 @@ class Game {
       block.alive = true;
       block.hitFlash = 0;
     }
+    this.rebuildBlockFieldLayer();
     for (const card of this.cards) {
       card.used = true;
       card.ammo = 0;
@@ -2597,17 +3000,15 @@ class Game {
   }
 
   updateConfetti(dt) {
-    this.confetti = this.confetti
-      .map((piece) => ({
-        ...piece,
-        x: piece.x + piece.vx * dt,
-        y: piece.y + piece.vy * dt,
-        vx: piece.vx * 0.997,
-        vy: piece.vy + 280 * dt,
-        rotation: piece.rotation + piece.spin * dt,
-        life: piece.life - dt,
-      }))
-      .filter((piece) => piece.life > 0 && piece.y < this.height + 80);
+    compactListInPlace(this.confetti, (piece) => {
+      piece.x += piece.vx * dt;
+      piece.y += piece.vy * dt;
+      piece.vx *= 0.997;
+      piece.vy += 280 * dt;
+      piece.rotation += piece.spin * dt;
+      piece.life -= dt;
+      return piece.life > 0 && piece.y < this.height + 80;
+    });
   }
 
   update(dt) {
@@ -2657,54 +3058,42 @@ class Game {
     }
     this.units = this.units.filter((unit) => unit.alive);
 
-    this.projectiles = this.projectiles
-      .map((projectile) => ({
-        ...projectile,
-        life: projectile.life - dt,
-      }))
-      .filter((projectile) => projectile.life > 0);
+    compactListInPlace(this.projectiles, (projectile) => {
+      projectile.life -= dt;
+      return projectile.life > 0;
+    });
 
-    this.particles = this.particles
-      .map((particle) => ({
-        ...particle,
-        x: particle.x + particle.vx * dt,
-        y: particle.y + particle.vy * dt,
-        vx: particle.vx * 0.95,
-        vy: particle.vy * 0.95 + 22 * dt,
-        life: particle.life - dt,
-      }))
-      .filter((particle) => particle.life > 0);
+    compactListInPlace(this.particles, (particle) => {
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vx *= 0.95;
+      particle.vy = particle.vy * 0.95 + 22 * dt;
+      particle.life -= dt;
+      return particle.life > 0;
+    });
 
-    this.impactRings = this.impactRings
-      .map((ring) => ({
-        ...ring,
-        life: ring.life - dt,
-      }))
-      .filter((ring) => ring.life > 0);
+    compactListInPlace(this.impactRings, (ring) => {
+      ring.life -= dt;
+      return ring.life > 0;
+    });
 
-    this.blockWaves = this.blockWaves
-      .map((wave) => ({
-        ...wave,
-        life: wave.life - dt,
-      }))
-      .filter((wave) => wave.life > 0);
+    compactListInPlace(this.blockWaves, (wave) => {
+      wave.life -= dt;
+      return wave.life > 0;
+    });
 
-    this.slotBursts = this.slotBursts
-      .map((burst) => ({
-        ...burst,
-        life: burst.life - dt,
-      }))
-      .filter((burst) => burst.life > 0);
+    compactListInPlace(this.slotBursts, (burst) => {
+      burst.life -= dt;
+      return burst.life > 0;
+    });
 
-    this.floatTexts = this.floatTexts
-      .map((text) => ({
-        ...text,
-        x: text.x + text.vx * dt,
-        y: text.y + text.vy * dt,
-        vy: text.vy * 0.96,
-        life: text.life - dt,
-      }))
-      .filter((text) => text.life > 0);
+    compactListInPlace(this.floatTexts, (text) => {
+      text.x += text.vx * dt;
+      text.y += text.vy * dt;
+      text.vy *= 0.96;
+      text.life -= dt;
+      return text.life > 0;
+    });
 
     if (this.checkVictoryReady()) {
       this.startVictorySequence();
@@ -2822,41 +3211,44 @@ class Game {
 
   drawVictoryBackground(ctx) {
     const victoryTheme = CURRENT_THEME.victory || {};
+    const worldRect = this.getViewportWorldRect();
     const gradientStops = victoryTheme.gradient || ["#d8f3ff", "#a8ddff", "#8bc9ff"];
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
+    const gradient = ctx.createLinearGradient(0, worldRect.y, 0, worldRect.y + worldRect.h);
     gradient.addColorStop(0, gradientStops[0] || "#d8f3ff");
     gradient.addColorStop(0.55, gradientStops[1] || gradientStops[0] || "#a8ddff");
     gradient.addColorStop(1, gradientStops[2] || gradientStops[1] || "#8bc9ff");
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillRect(worldRect.x, worldRect.y, worldRect.w, worldRect.h);
 
     ctx.save();
     ctx.globalAlpha = 0.45;
     ctx.fillStyle = victoryTheme.cloudColor || "rgba(255, 255, 255, 0.7)";
     ctx.beginPath();
-    ctx.arc(this.width * 0.16, this.height * 0.18, 120, 0, Math.PI * 2);
+    ctx.arc(worldRect.x + worldRect.w * 0.16, worldRect.y + worldRect.h * 0.18, 120, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(this.width * 0.84, this.height * 0.28, 170, 0, Math.PI * 2);
+    ctx.arc(worldRect.x + worldRect.w * 0.84, worldRect.y + worldRect.h * 0.28, 170, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
   drawVictoryArtwork(ctx) {
-    const victoryTheme = CURRENT_THEME.victory || {};
     const floatOffset = Math.sin(this.victoryFloatTime * Math.PI * VICTORY_FLOAT_SPEED) * VICTORY_FLOAT_AMPLITUDE;
     const boardX = LAYOUT.fieldX;
     const boardY = LAYOUT.fieldY + VICTORY_ART_OFFSET_Y;
     const boardW = LAYOUT.fieldCols * LAYOUT.fieldStep;
     const boardH = LAYOUT.fieldRows * LAYOUT.fieldStep;
+    const centerX = boardX + boardW * 0.5;
+    const centerY = boardY + boardH * 0.5 + floatOffset;
 
     ctx.save();
-    ctx.translate(0, floatOffset);
-    ctx.shadowColor = "rgba(16, 56, 104, 0.32)";
-    ctx.shadowBlur = 30;
-    ctx.shadowOffsetY = 18;
-    roundedRect(ctx, boardX - 12, boardY - 12, boardW + 24, boardH + 24, 18);
-    ctx.fillStyle = victoryTheme.boardGlow || "rgba(255, 255, 255, 0.42)";
+    const halo = ctx.createRadialGradient(centerX, centerY - boardH * 0.08, boardW * 0.12, centerX, centerY, boardW * 0.72);
+    halo.addColorStop(0, "rgba(255, 255, 255, 0.34)");
+    halo.addColorStop(0.45, "rgba(255, 255, 255, 0.16)");
+    halo.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, boardW * 0.58, boardH * 0.52, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 
@@ -2873,8 +3265,9 @@ class Game {
 
   drawVolumetricBlock(ctx, block, x, y, options = {}) {
     const size = block.size;
-    const sprite = block.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
-    const baseColor = block.color === "green" ? "#81c341" : "#2a2a2a";
+    const spriteKey = `${block.color}Tile`;
+    const sprite = this.sprites[spriteKey] || this.sprites.greenTile;
+    const baseColor = getBlockColorConfig(block.color).face;
     const alpha = options.alpha ?? 1;
     const shadowOpacity = options.shadowOpacity ?? 0.24;
     const bevelStrength = options.bevelStrength ?? 0.28;
@@ -2944,15 +3337,19 @@ class Game {
   }
 
   drawDestroyedBlocks(ctx) {
-    for (const block of this.blocks) {
-      const isPlaced = block.alive;
-      const waveOffsetY = isPlaced ? this.getBlockWaveOffsetY(block) : 0;
-      this.drawVolumetricBlock(ctx, block, block.x, block.y, {
-        alpha: isPlaced ? 0.96 : 0.24,
-        shadowOpacity: isPlaced ? 0.22 : 0.12,
-        bevelStrength: isPlaced ? 0.26 : 0.14,
-        offsetY: waveOffsetY,
-      });
+    if (this.blockWaves.length === 0 && this.blockFieldLayer) {
+      ctx.drawImage(this.blockFieldLayer, 0, 0);
+    } else {
+      for (const block of this.blocks) {
+        const isPlaced = block.alive;
+        const waveOffsetY = isPlaced ? this.getBlockWaveOffsetY(block) : 0;
+        this.drawVolumetricBlock(ctx, block, block.x, block.y, {
+          alpha: isPlaced ? 0.96 : 0.24,
+          shadowOpacity: isPlaced ? 0.22 : 0.12,
+          bevelStrength: isPlaced ? 0.26 : 0.14,
+          offsetY: waveOffsetY,
+        });
+      }
     }
 
     for (const block of this.blocks) {
@@ -2997,7 +3394,7 @@ class Game {
     const now = performance.now();
     const pulseFast = 0.5 + 0.5 * Math.sin(now * 0.018);
     const pulseSlow = 0.5 + 0.5 * Math.sin(now * 0.009 + 1.3);
-    const accentColor = nextBlock.color === "green" ? "160, 255, 105" : "255, 255, 255";
+    const accentColor = getBlockColorConfig(nextBlock.color).accentRgb;
 
     ctx.save();
     ctx.globalAlpha = 0.2 + pulseSlow * 0.24;
@@ -3189,12 +3586,13 @@ class Game {
 
   drawProjectiles(ctx) {
     for (const projectile of this.projectiles) {
-      const bulletCoreColor = projectile.color === "green" ? COLORS.bulletGreenCore : COLORS.bulletBlackCore;
-      const bulletLightColor = projectile.color === "green" ? COLORS.bulletGreen : "#f2f2f2";
+      const projectilePalette = getBlockColorConfig(projectile.color).projectile;
+      const bulletCoreColor = projectilePalette.core;
+      const bulletLightColor = projectilePalette.light;
       const fade = projectile.maxLife > 0 ? projectile.life / projectile.maxLife : 0;
       const progress = easeOutCubic(1 - fade);
       const blockSize = LAYOUT.cellSize * 0.78;
-      const blockSprite = projectile.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+      const blockSprite = this.sprites[`${projectile.color}Tile`] || this.sprites.greenTile;
       const dx = projectile.toX - projectile.fromX;
       const dy = projectile.toY - projectile.fromY;
       const dist = Math.max(1, Math.hypot(dx, dy));
@@ -3208,8 +3606,8 @@ class Game {
 
       const glow = ctx.createLinearGradient(tailX, tailY, headX, headY);
       glow.addColorStop(0, "rgba(255,255,255,0)");
-      glow.addColorStop(0.55, projectile.color === "green" ? "rgba(164,255,128,0.22)" : "rgba(255,255,255,0.24)");
-      glow.addColorStop(1, projectile.color === "green" ? "rgba(190,255,160,0.55)" : "rgba(255,255,255,0.62)");
+      glow.addColorStop(0.55, projectilePalette.glowMid);
+      glow.addColorStop(1, projectilePalette.glowEnd);
       ctx.globalAlpha = 0.9 * fade;
       ctx.strokeStyle = glow;
       ctx.lineCap = "round";
@@ -3247,8 +3645,8 @@ class Game {
 
       const auraR = blockSize * (1.35 + (1 - fade) * 0.42);
       const aura = ctx.createRadialGradient(headX, headY, 0, headX, headY, auraR);
-      aura.addColorStop(0, projectile.color === "green" ? "rgba(212,255,184,0.75)" : "rgba(255,255,255,0.78)");
-      aura.addColorStop(0.4, projectile.color === "green" ? "rgba(160,244,105,0.34)" : "rgba(245,245,245,0.30)");
+      aura.addColorStop(0, projectilePalette.auraInner);
+      aura.addColorStop(0.4, projectilePalette.auraMid);
       aura.addColorStop(1, "rgba(255,255,255,0)");
       ctx.globalAlpha = 0.95 * fade;
       ctx.fillStyle = aura;
@@ -3822,12 +4220,16 @@ class Game {
     ctx.translate(fieldCenter.x, fieldCenter.y);
     ctx.scale(this.cameraZoom, this.cameraZoom);
     ctx.translate(-fieldCenter.x, -fieldCenter.y);
-    this.drawBackground(ctx);
-    this.drawWagonLayer(ctx);
-    this.drawBottomCleanup(ctx);
+    if (this.staticSceneLayer) {
+      ctx.drawImage(this.staticSceneLayer, 0, 0);
+    } else {
+      this.drawBackground(ctx);
+      this.drawWagonLayer(ctx);
+      this.drawBottomCleanup(ctx);
+      this.drawSlotState(ctx);
+    }
     this.drawDestroyedBlocks(ctx);
     this.drawTargetSilhouette(ctx);
-    this.drawSlotState(ctx);
     this.drawProjectiles(ctx);
     this.drawImpactFx(ctx);
     this.drawParticles(ctx);
@@ -3989,7 +4391,14 @@ class Game {
     }
   }
 
-  initDebugContentSelectors() {
+  refreshAvailableLevels() {
+    this.availableLevels = LEVEL_DEFINITIONS.map((level) => ({
+      id: String(level.id),
+      name: String(level.name || `Level ${level.id}`),
+    }));
+  }
+
+  fillDebugContentSelectors() {
     const fillSelect = (select, options, selectedId) => {
       if (!select) {
         return;
@@ -4004,8 +4413,18 @@ class Game {
       select.value = selectedId;
     };
 
+    this.refreshAvailableLevels();
     fillSelect(this.debugLevelSelect, this.availableLevels, this.getValidLevelId(this.currentLevelId));
     fillSelect(this.debugThemeSelect, this.availableThemes, this.getValidThemeId(this.currentThemeId));
+  }
+
+  initDebugContentSelectors() {
+    this.fillDebugContentSelectors();
+
+    if (this.debugContentSelectorsBound) {
+      return;
+    }
+    this.debugContentSelectorsBound = true;
 
     if (this.debugLevelSelect) {
       this.debugLevelSelect.addEventListener("change", () => {
@@ -4024,12 +4443,269 @@ class Game {
     }
   }
 
+  setDebugImageGeneratorVisible(visible) {
+    if (this.debugImageLevelSection) {
+      this.debugImageLevelSection.classList.toggle("is-collapsed", !visible);
+    }
+  }
+
+  setDebugImageStatus(message, tone = "info") {
+    if (!this.debugImageStatus) {
+      return;
+    }
+    this.debugImageStatus.textContent = message;
+    this.debugImageStatus.dataset.tone = tone;
+  }
+
+  syncDebugImageFileName() {
+    if (!this.debugImageFileName) {
+      return;
+    }
+    if (!this.debugGeneratedSourceImage) {
+      this.debugImageFileName.textContent = "файл не выбран";
+      return;
+    }
+    const { fileName, width, height } = this.debugGeneratedSourceImage;
+    this.debugImageFileName.textContent = `${fileName} (${width}x${height})`;
+  }
+
+  syncDebugImageGridInputs(cols, rows) {
+    const nextCols = clampDebugImageGridSize(cols);
+    const nextRows = clampDebugImageGridSize(rows);
+    if (this.debugImageGridColsInput) {
+      this.debugImageGridColsInput.value = String(nextCols);
+    }
+    if (this.debugImageGridRowsInput) {
+      this.debugImageGridRowsInput.value = String(nextRows);
+    }
+  }
+
+  getDebugImageGridSize() {
+    const cols = clampDebugImageGridSize(this.debugImageGridColsInput?.value);
+    const rows = clampDebugImageGridSize(this.debugImageGridRowsInput?.value);
+    this.syncDebugImageGridInputs(cols, rows);
+    return { cols, rows };
+  }
+
+  syncDebugImageScaleInput(scale) {
+    const nextScale = clampDebugImageScale(scale);
+    if (this.debugImageScaleInput) {
+      this.debugImageScaleInput.value = nextScale.toFixed(2);
+    }
+    if (this.debugImageScaleValue) {
+      const text = `${nextScale.toFixed(2)}x`;
+      this.debugImageScaleValue.value = text;
+      this.debugImageScaleValue.textContent = text;
+    }
+    return nextScale;
+  }
+
+  getDebugImageScale() {
+    return this.syncDebugImageScaleInput(this.debugImageScaleInput?.value);
+  }
+
+  syncDebugImageOffsetYInput(offsetY) {
+    const nextOffsetY = clampDebugImageOffsetY(offsetY);
+    if (this.debugImageOffsetYInput) {
+      this.debugImageOffsetYInput.value = String(nextOffsetY);
+    }
+    if (this.debugImageOffsetYValue) {
+      const text = String(nextOffsetY);
+      this.debugImageOffsetYValue.value = text;
+      this.debugImageOffsetYValue.textContent = text;
+    }
+    return nextOffsetY;
+  }
+
+  getDebugImageOffsetY() {
+    return this.syncDebugImageOffsetYInput(this.debugImageOffsetYInput?.value);
+  }
+
+  getDebugImageBaseLevelId() {
+    const candidate = this.currentLevelId === DEBUG_IMAGE_LEVEL_ID ? this.debugGeneratedBaseLevelId : this.currentLevelId;
+    const normalized = String(candidate || DEFAULT_LEVEL_ID);
+    return normalized === DEBUG_IMAGE_LEVEL_ID ? DEFAULT_LEVEL_ID : this.getValidLevelId(normalized);
+  }
+
+  loadDebugImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const objectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.decoding = "async";
+      image.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("Не удалось прочитать картинку."));
+      };
+      image.src = objectUrl;
+    });
+  }
+
+  async handleDebugImageSelection() {
+    const file = this.debugImageUploadInput?.files?.[0] || null;
+    if (!file) {
+      this.debugGeneratedSourceImage = null;
+      this.syncDebugImageFileName();
+      this.setDebugImageStatus("Выбери изображение, затем укажи сетку и нажми создать.");
+      return;
+    }
+    try {
+      const image = await this.loadDebugImageFile(file);
+      this.debugGeneratedSourceImage = {
+        fileName: file.name,
+        width: image.naturalWidth || image.width,
+        height: image.naturalHeight || image.height,
+        image,
+      };
+      this.syncDebugImageFileName();
+      this.setDebugImageStatus("Картинка загружена. Теперь можно создать или обновить уровень.", "success");
+    } catch (error) {
+      this.debugGeneratedSourceImage = null;
+      this.syncDebugImageFileName();
+      this.setDebugImageStatus(error instanceof Error ? error.message : "Не удалось загрузить картинку.", "error");
+    }
+  }
+
+  sampleDebugImageToMatrix(image, cols, rows) {
+    const sample = document.createElement("canvas");
+    sample.width = cols;
+    sample.height = rows;
+    const ctx = sample.getContext("2d", { alpha: true, willReadFrequently: true });
+    if (!ctx) {
+      throw new Error("Не удалось создать canvas для генератора.");
+    }
+    ctx.clearRect(0, 0, cols, rows);
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    ctx.drawImage(image, 0, 0, cols, rows);
+    const { data } = ctx.getImageData(0, 0, cols, rows);
+    const colorMatrix = [];
+    const colorCounts = {};
+    let filledCells = 0;
+
+    for (let row = 0; row < rows; row++) {
+      const nextRow = [];
+      for (let col = 0; col < cols; col++) {
+        const index = (row * cols + col) * 4;
+        const alpha = data[index + 3];
+        let color = null;
+        if (alpha >= 24) {
+          color = getNearestBlockColor(data[index], data[index + 1], data[index + 2]);
+          colorCounts[color] = (colorCounts[color] || 0) + 1;
+          filledCells += 1;
+        }
+        nextRow.push(color);
+      }
+      colorMatrix.push(nextRow);
+    }
+
+    return { colorMatrix, colorCounts, filledCells };
+  }
+
+  buildDebugImageLevel(colorMatrix, metadata = {}) {
+    const rows = colorMatrix.length;
+    const cols = colorMatrix[0]?.length || 0;
+    const baseLevelId = this.getDebugImageBaseLevelId();
+    const baseLevel = getLevelConfig(baseLevelId);
+    const level = cloneData(baseLevel);
+    const baseFieldWidth = Math.max(1, baseLevel.layout.fieldCols * baseLevel.layout.fieldStep);
+    const baseFieldHeight = Math.max(1, baseLevel.layout.fieldRows * baseLevel.layout.fieldStep);
+    const artScale = clampDebugImageScale(metadata.imageScale);
+    const baseStep = Math.min(baseFieldWidth / Math.max(1, cols), baseFieldHeight / Math.max(1, rows));
+    const fieldStep = Math.max(12, Math.floor(baseStep * artScale));
+    const cellSize = Math.max(10, fieldStep - Math.max(2, Math.round(fieldStep * 0.08)));
+    const fieldWidth = cols * fieldStep;
+    const fieldHeight = rows * fieldStep;
+    const centerX = baseLevel.layout.fieldX + baseFieldWidth * 0.5;
+    const centerY = baseLevel.layout.fieldY + baseFieldHeight * 0.5;
+    const offsetY = clampDebugImageOffsetY(metadata.offsetY);
+    const fieldX = Math.round(centerX - fieldWidth * 0.5);
+    const fieldY = Math.round(centerY - fieldHeight * 0.5 + offsetY);
+    const pattern = colorMatrix.map((row) => row.map((cell) => getPatternCellChar(cell)).join(""));
+
+    level.id = DEBUG_IMAGE_LEVEL_ID;
+    level.name = `Generated ${cols}x${rows}`;
+    level.fallbackFieldPattern = pattern;
+    level.pixelArt = {
+      id: DEBUG_IMAGE_LEVEL_ID,
+      name: metadata.fileName || "Generated image",
+      sourceFileName: metadata.fileName || "",
+      artScale,
+      offsetY,
+      grid: { cols, rows },
+      pattern,
+      colorMatrix,
+    };
+    level.referenceGrid = {
+      x: fieldX,
+      y: fieldY,
+      step: fieldStep,
+      cellSize,
+    };
+    level.layout.fieldCols = cols;
+    level.layout.fieldRows = rows;
+    level.layout.fieldStep = fieldStep;
+    level.layout.cellSize = cellSize;
+    level.layout.fieldX = fieldX;
+    level.layout.fieldY = fieldY;
+
+    return { level, baseLevelId };
+  }
+
+  generateDebugImageLevel() {
+    if (!this.debugGeneratedSourceImage?.image) {
+      this.setDebugImageStatus("Сначала загрузи картинку для генерации уровня.", "error");
+      return false;
+    }
+
+    const { cols, rows } = this.getDebugImageGridSize();
+    const imageScale = this.getDebugImageScale();
+    const offsetY = this.getDebugImageOffsetY();
+    const { colorMatrix, colorCounts, filledCells } = this.sampleDebugImageToMatrix(this.debugGeneratedSourceImage.image, cols, rows);
+
+    if (filledCells <= 0) {
+      this.setDebugImageStatus("В выбранной картинке не найдено ни одного непрозрачного пикселя.", "error");
+      return false;
+    }
+
+    const { level, baseLevelId } = this.buildDebugImageLevel(colorMatrix, {
+      fileName: this.debugGeneratedSourceImage.fileName,
+      imageScale,
+      offsetY,
+    });
+    const colorSummary = Object.keys(colorCounts)
+      .map((color) => `${BLOCK_COLOR_LABELS[color] || color}: ${colorCounts[color]}`)
+      .join(", ");
+
+    this.debugGeneratedBaseLevelId = baseLevelId;
+    upsertLevelDefinition(level);
+    this.fillDebugContentSelectors();
+    this.applyLevelConfig(level.id, { restart: true });
+    this.syncDebugContentSelectors();
+    this.setDebugImageStatus(
+      `Собран уровень ${cols}x${rows} с размером ${imageScale.toFixed(2)}x и Y ${offsetY}. Блоков: ${filledCells}. ${colorSummary}`,
+      "success"
+    );
+    return true;
+  }
+
   initDebugControls() {
     if (this.debugPanel) {
       this.debugPanel.classList.remove("is-visible");
     }
+    this.setDebugImageGeneratorVisible(false);
     this.initDebugContentSelectors();
     this.syncDebugContentSelectors();
+    this.syncDebugImageGridInputs(CURRENT_LEVEL.layout?.fieldCols || 18, CURRENT_LEVEL.layout?.fieldRows || 18);
+    this.syncDebugImageScaleInput(1);
+    this.syncDebugImageOffsetYInput(0);
+    this.syncDebugImageFileName();
+    this.setDebugImageStatus("Выбери изображение, затем укажи сетку и нажми создать.");
     const bindRange = (input, output, currentValue, parseValue, formatValue, onApply) => {
       if (!input) {
         return;
@@ -4276,6 +4952,36 @@ class Game {
         return CARD_Y_OFFSET_4;
       }
     );
+
+    if (this.debugImageUploadInput) {
+      this.debugImageUploadInput.addEventListener("change", () => {
+        void this.handleDebugImageSelection();
+      });
+    }
+    if (this.debugImageScaleInput) {
+      this.debugImageScaleInput.addEventListener("input", () => {
+        this.syncDebugImageScaleInput(this.debugImageScaleInput.value);
+      });
+      this.debugImageScaleInput.dispatchEvent(new Event("input"));
+    }
+    if (this.debugImageOffsetYInput) {
+      this.debugImageOffsetYInput.addEventListener("input", () => {
+        this.syncDebugImageOffsetYInput(this.debugImageOffsetYInput.value);
+      });
+      this.debugImageOffsetYInput.dispatchEvent(new Event("input"));
+    }
+    if (this.debugImageCreateButton) {
+      this.debugImageCreateButton.addEventListener("click", (event) => {
+        this.generateDebugImageLevel();
+        event.preventDefault();
+      });
+    }
+    if (this.debugImageRefreshButton) {
+      this.debugImageRefreshButton.addEventListener("click", (event) => {
+        this.generateDebugImageLevel();
+        event.preventDefault();
+      });
+    }
   }
 
   setDebugPanelVisible(visible) {
@@ -4345,6 +5051,13 @@ class Game {
         event.preventDefault();
       });
     }
+    if (this.debugImageLevelToggleButton) {
+      this.debugImageLevelToggleButton.addEventListener("click", (event) => {
+        const hidden = !!this.debugImageLevelSection?.classList.contains("is-collapsed");
+        this.setDebugImageGeneratorVisible(hidden);
+        event.preventDefault();
+      });
+    }
     if (this.debugToggleFab) {
       this.debugToggleFab.addEventListener("click", (event) => {
         this.toggleDebugPanel();
@@ -4363,12 +5076,29 @@ class Game {
   }
 
   renderGameToText() {
+    const blocksByColor = this.blocks.reduce((acc, block) => {
+      if (!block.alive) {
+        acc[block.color] = (acc[block.color] || 0) + 1;
+      }
+      return acc;
+    }, {});
     return JSON.stringify({
       mode: this.gameState,
       scene: "procedural_reskin",
       source: "procedural",
       levelId: this.currentLevelId,
       themeId: this.currentThemeId,
+      generatedLevel:
+        this.currentLevelId === DEBUG_IMAGE_LEVEL_ID
+          ? {
+            fileName: this.debugGeneratedSourceImage?.fileName || "",
+            cols: LAYOUT.fieldCols,
+            rows: LAYOUT.fieldRows,
+            artScale: clampDebugImageScale(CURRENT_LEVEL.pixelArt?.artScale),
+            offsetY: clampDebugImageOffsetY(CURRENT_LEVEL.pixelArt?.offsetY),
+            baseLevelId: this.debugGeneratedBaseLevelId,
+          }
+          : null,
       unitTheme: "numbered_slimes",
       coordinateSystem: {
         origin: "top-left",
@@ -4379,10 +5109,7 @@ class Game {
       remainingBlocks: this.remainingBlocks,
       blocksTotal: this.blocks.length,
       queueCards: this.cardManager.queueCardCount,
-      blocksByColor: {
-        green: this.blocks.filter((block) => !block.alive && block.color === "green").length,
-        black: this.blocks.filter((block) => !block.alive && block.color === "black").length,
-      },
+      blocksByColor,
       units: this.units.map((unit) => ({
         id: unit.id,
         color: unit.color,
@@ -4413,7 +5140,8 @@ class Game {
 
 async function bootstrapGame() {
   const loadedLevels = await loadLevelDefinitions();
-  rebuildLevelRegistry(loadedLevels.length ? loadedLevels : [BUILTIN_FALLBACK_LEVEL]);
+  const fallbackLevels = LEVEL_DEFINITIONS_FALLBACK.length ? LEVEL_DEFINITIONS_FALLBACK : [BUILTIN_FALLBACK_LEVEL];
+  rebuildLevelRegistry(loadedLevels.length ? loadedLevels : fallbackLevels);
 
   const initialLevel = getLevelConfig(DEFAULT_LEVEL_ID);
   syncLevelGlobals(initialLevel);
