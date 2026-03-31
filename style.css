@@ -99,7 +99,7 @@ body {
 
 .debug-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
 }
 
@@ -167,7 +167,9 @@ body {
 }
 
 #debug6,
-#debugReset {
+#debugReset,
+#debugExport,
+#debugExportLevel {
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.14);
@@ -179,7 +181,9 @@ body {
 }
 
 #debug6:active,
-#debugReset:active {
+#debugReset:active,
+#debugExport:active,
+#debugExportLevel:active {
   transform: translateY(1px);
 }
 

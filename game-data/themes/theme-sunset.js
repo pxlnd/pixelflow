@@ -6,7 +6,7 @@ window.PIXELFLOW_THEME_SUNSET = {
     backButton: "ui/back_button.png",
     timerPanel: "ui/timer_panel.png",
     restartButton: "ui/restart_button.png",
-    losePopup: "ui/lose_popup_ref.png",
+    losePopup: "ui/lose_popup_space_ref.png",
   },
   board: {
     fill: "#b9793e",

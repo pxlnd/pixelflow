@@ -1,8 +1,3 @@
-const LEVEL_REGISTRY = window.PIXELFLOW_LEVELS || {
-  LEVEL_DEFINITIONS: [],
-  DEFAULT_LEVEL_ID: "level-1",
-  getLevelConfig: () => null,
-};
 const THEME_REGISTRY = window.PIXELFLOW_THEMES || {
   THEME_DEFINITIONS: [],
   DEFAULT_THEME_ID: "classic",
@@ -10,7 +5,7 @@ const THEME_REGISTRY = window.PIXELFLOW_THEMES || {
 };
 
 const BUILTIN_FALLBACK_LEVEL = {
-  id: "level-1",
+  id: "1",
   name: "Level 1",
   fallbackFieldPattern: [
     "GGGGGGGGGGGGGGGGGG",
@@ -77,7 +72,7 @@ const BUILTIN_FALLBACK_THEME = {
     backButton: "ui/back_button.png",
     timerPanel: "ui/timer_panel.png",
     restartButton: "ui/restart_button.png",
-    losePopup: "ui/lose_popup_ref.png",
+    losePopup: "ui/lose_popup_space_ref.png",
   },
   board: {
     fill: "#6aa93a",
@@ -103,12 +98,18 @@ const BUILTIN_FALLBACK_THEME = {
   confettiColors: ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"],
 };
 
-const LEVEL_DEFINITIONS = Array.isArray(LEVEL_REGISTRY.LEVEL_DEFINITIONS) ? LEVEL_REGISTRY.LEVEL_DEFINITIONS : [];
+let LEVEL_DEFINITIONS = [];
 const THEME_DEFINITIONS = Array.isArray(THEME_REGISTRY.THEME_DEFINITIONS) ? THEME_REGISTRY.THEME_DEFINITIONS : [];
-const DEFAULT_LEVEL_ID = String(LEVEL_REGISTRY.DEFAULT_LEVEL_ID || BUILTIN_FALLBACK_LEVEL.id);
+let DEFAULT_LEVEL_ID = BUILTIN_FALLBACK_LEVEL.id;
 const DEFAULT_THEME_ID = String(THEME_REGISTRY.DEFAULT_THEME_ID || BUILTIN_FALLBACK_THEME.id);
-const getLevelConfigRaw = typeof LEVEL_REGISTRY.getLevelConfig === "function" ? LEVEL_REGISTRY.getLevelConfig : () => null;
 const getThemeConfigRaw = typeof THEME_REGISTRY.getThemeConfig === "function" ? THEME_REGISTRY.getThemeConfig : () => null;
+let LEVEL_MAP = new Map();
+
+function rebuildLevelRegistry(levelDefinitions) {
+  LEVEL_DEFINITIONS = Array.isArray(levelDefinitions) ? levelDefinitions.filter(isValidLevelConfig) : [];
+  DEFAULT_LEVEL_ID = String(LEVEL_DEFINITIONS[0]?.id || BUILTIN_FALLBACK_LEVEL.id);
+  LEVEL_MAP = new Map(LEVEL_DEFINITIONS.map((level) => [String(level.id), level]));
+}
 
 function isValidLevelConfig(config) {
   return !!config && !!config.layout && Array.isArray(config.layout.cards) && Array.isArray(config.layout.slots);
@@ -119,18 +120,13 @@ function isValidThemeConfig(config) {
 }
 
 const getLevelConfig = (levelId) => {
-  let config = null;
-  try {
-    config = getLevelConfigRaw(levelId);
-  } catch {
-    config = null;
-  }
+  const config = LEVEL_MAP.get(String(levelId || "")) || null;
   if (isValidLevelConfig(config)) {
-    return config;
+    return cloneData(config);
   }
   const fallbackById = LEVEL_DEFINITIONS.find((level) => level && level.id === DEFAULT_LEVEL_ID);
   if (isValidLevelConfig(fallbackById)) {
-    return fallbackById;
+    return cloneData(fallbackById);
   }
   return BUILTIN_FALLBACK_LEVEL;
 };
@@ -165,13 +161,12 @@ let SHOT_BOUNCE_SPEED = 1;
 let TRACK_UNIT_SPEED = 980;
 let BOTTOM_QUEUE_CARD_COUNT = 7;
 let TOP_PANEL_FONT_SIZE = 67;
-let TOP_LEVEL_PANEL_SCALE = 1.07;
-let TOP_COINS_PANEL_SCALE = 0.8;
-let BACK_BUTTON_SCALE = 1.02;
+let TOP_LEVEL_PANEL_SCALE = 1.2;
+let TOP_COINS_PANEL_SCALE = 1.2;
+let BACK_BUTTON_SCALE = 1.2;
 let TRACK_Y_OFFSET = 18;
-let FIELD_SCALE = 1.07;
 let PLAYFIELD_SCALE = 0.86;
-let SLOT_SIZE_SCALE = 1;
+let SLOT_SIZE_SCALE = 1.15;
 let SLOT_Y_OFFSET = -63;
 let TOP_UI_Y_OFFSET = 65;
 let CARD_Y_OFFSET_ALL = -72;
@@ -188,10 +183,6 @@ const PARKED_UNIT_TAP_RADIUS = 86;
 const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
-let REFERENCE_FIELD_X = 220;
-let REFERENCE_FIELD_Y = 216;
-let REFERENCE_FIELD_STEP = 32;
-let REFERENCE_CELL_SIZE = 30;
 let BOARD_FILL_COLOR = "#6aa93a";
 const VICTORY_ZOOM_TARGET = 1.12;
 const VICTORY_ZOOM_SPEED = 3.2;
@@ -205,6 +196,12 @@ const LAND_DURATION = 0.2;
 const STREAK_DECAY_TIME = 1.45;
 const LOSE_POPUP_ANIM_DURATION = 0.34;
 const LEVEL_START_FADE_DURATION = 0.22;
+const CARD_QUEUE_SPRING_STIFFNESS = 42;
+const CARD_QUEUE_SPRING_DAMPING = 10.5;
+const CARD_QUEUE_SETTLE_EPSILON = 2;
+const CARD_QUEUE_BOUNCE_SCALE = 0.09;
+const CARD_QUEUE_SCALE_STIFFNESS = 30;
+const CARD_QUEUE_SCALE_DAMPING = 9;
 const MIN_QUEUE_CARDS = 2;
 const MAX_QUEUE_CARDS = 24;
 const BACK_BUTTON_UI = {
@@ -242,9 +239,9 @@ const COINS_UI = {
   plusOffsetY: 50,
 };
 const LOSE_POPUP_UI = {
-  w: 710,
-  h: 728,
-  y: 358,
+  w: 646,
+  h: 663,
+  y: 392,
   outerRadius: 26,
   innerPadding: 18,
   closeSize: 40,
@@ -262,7 +259,6 @@ const BASE_TOP_UI = {
 };
 
 const DEBUG_STORAGE_KEY = "pixelflow.debug.settings";
-const PLAYFIELD_SCALE_MIGRATION_KEY = "pixelflow.debug.playfieldScale.migrated.v1";
 const DEBUG_STORAGE_KEYS_FALLBACK = [
   "pixelflow.debug.settings.v4",
   "pixelflow.debug.settings.v3",
@@ -275,13 +271,12 @@ const DEBUG_DEFAULTS = {
   trackUnitSpeed: 980,
   queueCardCount: 7,
   topPanelFontSize: 67,
-  topLevelPanelScale: 1.07,
-  topCoinsPanelScale: 0.8,
-  backButtonScale: 1.02,
+  topLevelPanelScale: 1.2,
+  topCoinsPanelScale: 1.2,
+  backButtonScale: 1.2,
   trackYOffset: 18,
-  fieldScale: 1.07,
   playfieldScale: 0.86,
-  slotSizeScale: 1,
+  slotSizeScale: 1.15,
   slotYOffset: -63,
   topUiYOffset: 65,
   cardYOffsetAll: -72,
@@ -292,6 +287,41 @@ const DEBUG_DEFAULTS = {
   levelId: DEFAULT_LEVEL_ID,
   themeId: DEFAULT_THEME_ID,
 };
+
+const LEVELS_PATH = "game-data/levels";
+const MAX_AUTOLOAD_LEVELS = 50;
+
+async function loadLevelJSONByNumber(levelNumber) {
+  try {
+    const response = await fetch(`${LEVELS_PATH}/${levelNumber}.json`, { cache: "no-store" });
+    if (!response.ok) {
+      return null;
+    }
+    const parsed = await response.json();
+    const level = parsed && typeof parsed === "object" && parsed.level ? parsed.level : parsed;
+    if (!level || typeof level !== "object") {
+      return null;
+    }
+    const normalizedLevel = cloneData(level);
+    normalizedLevel.id = String(normalizedLevel.id || levelNumber);
+    normalizedLevel.name = String(normalizedLevel.name || `Level ${normalizedLevel.id}`);
+    return isValidLevelConfig(normalizedLevel) ? normalizedLevel : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadLevelDefinitions() {
+  const levels = [];
+  for (let levelNumber = 1; levelNumber <= MAX_AUTOLOAD_LEVELS; levelNumber += 1) {
+    const level = await loadLevelJSONByNumber(levelNumber);
+    if (!level) {
+      break;
+    }
+    levels.push(level);
+  }
+  return levels;
+}
 
 const DEFAULT_COLORS = {
   white: "#ffffff",
@@ -356,10 +386,6 @@ function syncLevelGlobals(levelConfig) {
   LAYOUT = cloneLevelLayout(CURRENT_LEVEL.layout);
   BASE_LAYOUT = createBaseLayout(LAYOUT);
   FALLBACK_FIELD_PATTERN = [...(CURRENT_LEVEL.fallbackFieldPattern || [])];
-  REFERENCE_FIELD_X = Number(CURRENT_LEVEL.referenceGrid?.x ?? 220);
-  REFERENCE_FIELD_Y = Number(CURRENT_LEVEL.referenceGrid?.y ?? 216);
-  REFERENCE_FIELD_STEP = Number(CURRENT_LEVEL.referenceGrid?.step ?? 32);
-  REFERENCE_CELL_SIZE = Number(CURRENT_LEVEL.referenceGrid?.cellSize ?? 30);
   TIMER_PANEL_UI.label = CURRENT_LEVEL.name || "Level";
   if (typeof document !== "undefined") {
     document.title = `PixelFlow - ${TIMER_PANEL_UI.label}`;
@@ -392,33 +418,6 @@ function getCardYOffsetByIndex(index) {
   if (index === 2) return CARD_Y_OFFSET_3;
   if (index === 3) return CARD_Y_OFFSET_4;
   return 0;
-}
-
-function encodeDebugState(state) {
-  try {
-    return encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(state)))));
-  } catch {
-    return "";
-  }
-}
-
-function decodeDebugState(encoded) {
-  try {
-    const json = decodeURIComponent(escape(atob(decodeURIComponent(encoded))));
-    const parsed = JSON.parse(json);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function readDebugStateFromHash() {
-  const hash = window.location.hash || "";
-  if (!hash.startsWith("#dbg=")) {
-    return null;
-  }
-  const encoded = hash.slice(5);
-  return decodeDebugState(encoded);
 }
 
 function lerp(a, b, t) {
@@ -973,6 +972,12 @@ class CardManager {
       label: card.label ?? index + 1,
       ammo: 0,
       used: false,
+      targetX: card.x,
+      targetY: card.y,
+      queueVx: 0,
+      queueVy: 0,
+      queueScale: 1,
+      queueScaleV: 0,
     }));
     const colorCounts = this.distributeColors(cards, blocks);
     const styleIndexByColor = {};
@@ -1033,15 +1038,97 @@ class CardManager {
         if (!layout) {
           return;
         }
+        const hadPosition = Number.isFinite(card.x) && Number.isFinite(card.y);
+        const wasRow = card.row;
         card.row = row;
-        card.x = layout.x;
-        card.y = layout.y;
         card.w = layout.w;
         card.h = layout.h;
+        card.targetX = layout.x;
+        card.targetY = layout.y;
+        if (!hadPosition) {
+          card.x = layout.x;
+          card.y = layout.y;
+        } else if (Math.abs(card.targetX - card.x) > 0.5 || Math.abs(card.targetY - card.y) > 0.5) {
+          const movingForward = row < wasRow;
+          if (movingForward) {
+            card.queueVy -= 22;
+            card.queueScale = Math.max(0.9, card.queueScale - CARD_QUEUE_BOUNCE_SCALE);
+          }
+        }
       });
     }
     this.cards = cards;
     return cards;
+  }
+
+  updateQueueAnimations(dt) {
+    let animating = false;
+    for (const card of this.cards) {
+      if (!Number.isFinite(card.x) || !Number.isFinite(card.y)) {
+        card.x = Number.isFinite(card.targetX) ? card.targetX : 0;
+        card.y = Number.isFinite(card.targetY) ? card.targetY : 0;
+      }
+      if (!Number.isFinite(card.targetX) || !Number.isFinite(card.targetY)) {
+        card.targetX = card.x;
+        card.targetY = card.y;
+      }
+      card.queueVx = Number.isFinite(card.queueVx) ? card.queueVx : 0;
+      card.queueVy = Number.isFinite(card.queueVy) ? card.queueVy : 0;
+      card.queueScale = Number.isFinite(card.queueScale) ? card.queueScale : 1;
+      card.queueScaleV = Number.isFinite(card.queueScaleV) ? card.queueScaleV : 0;
+
+      const dx = card.targetX - card.x;
+      const dy = card.targetY - card.y;
+      card.queueVx += dx * CARD_QUEUE_SPRING_STIFFNESS * dt;
+      card.queueVy += dy * CARD_QUEUE_SPRING_STIFFNESS * dt;
+      const velocityDamping = Math.exp(-CARD_QUEUE_SPRING_DAMPING * dt);
+      card.queueVx *= velocityDamping;
+      card.queueVy *= velocityDamping;
+      card.x += card.queueVx * dt;
+      card.y += card.queueVy * dt;
+
+      const scaleDelta = 1 - card.queueScale;
+      card.queueScaleV += scaleDelta * CARD_QUEUE_SCALE_STIFFNESS * dt;
+      card.queueScaleV *= Math.exp(-CARD_QUEUE_SCALE_DAMPING * dt);
+      card.queueScale += card.queueScaleV * dt;
+
+      const settledPosition =
+        Math.abs(card.targetX - card.x) <= CARD_QUEUE_SETTLE_EPSILON &&
+        Math.abs(card.targetY - card.y) <= CARD_QUEUE_SETTLE_EPSILON &&
+        Math.abs(card.queueVx) <= CARD_QUEUE_SETTLE_EPSILON * 4 &&
+        Math.abs(card.queueVy) <= CARD_QUEUE_SETTLE_EPSILON * 4;
+      const settledScale =
+        Math.abs(1 - card.queueScale) <= 0.01 &&
+        Math.abs(card.queueScaleV) <= 0.05;
+
+      if (settledPosition) {
+        card.x = card.targetX;
+        card.y = card.targetY;
+        card.queueVx = 0;
+        card.queueVy = 0;
+      } else {
+        animating = true;
+      }
+
+      if (settledScale) {
+        card.queueScale = 1;
+        card.queueScaleV = 0;
+      } else {
+        animating = true;
+      }
+    }
+    return animating;
+  }
+
+  hasAnimatingCards() {
+    return this.cards.some((card) => (
+      Math.abs((card.targetX ?? card.x ?? 0) - (card.x ?? 0)) > CARD_QUEUE_SETTLE_EPSILON ||
+      Math.abs((card.targetY ?? card.y ?? 0) - (card.y ?? 0)) > CARD_QUEUE_SETTLE_EPSILON ||
+      Math.abs(card.queueVx || 0) > CARD_QUEUE_SETTLE_EPSILON * 4 ||
+      Math.abs(card.queueVy || 0) > CARD_QUEUE_SETTLE_EPSILON * 4 ||
+      Math.abs((card.queueScale ?? 1) - 1) > 0.01 ||
+      Math.abs(card.queueScaleV || 0) > 0.05
+    ));
   }
 
   isFrontRowCard(card) {
@@ -1116,9 +1203,6 @@ class Game {
     this.availableLevels = LEVEL_DEFINITIONS.map((level) => ({ id: level.id, name: level.name }));
     this.availableThemes = THEME_DEFINITIONS.map((theme) => ({ id: theme.id, name: theme.name }));
 
-    this.referenceImage = new Image();
-    this.referenceImage.src = getThemeAsset("referenceImage", "Ref.png");
-    this.referenceImage.decoding = "sync";
     this.backButtonImage = new Image();
     this.backButtonImage.src = getThemeAsset("backButton", "ui/back_button.png");
     this.backButtonImage.decoding = "sync";
@@ -1129,15 +1213,9 @@ class Game {
     this.restartButtonImage.src = getThemeAsset("restartButton", "ui/restart_button.png");
     this.restartButtonImage.decoding = "sync";
     this.losePopupImage = new Image();
-    this.losePopupImage.src = getThemeAsset("losePopup", "ui/lose_popup_ref.png");
+    this.losePopupImage.src = "ui/lose_popup_space_ref.png";
     this.losePopupImage.decoding = "sync";
 
-    this.referenceLayer = document.createElement("canvas");
-    this.referenceLayer.width = this.width;
-    this.referenceLayer.height = this.height;
-    this.referenceCtx = this.referenceLayer.getContext("2d", { alpha: false });
-
-    this.referencePixels = null;
     this.sprites = {
       holeTile: null,
       greenTile: null,
@@ -1199,6 +1277,8 @@ class Game {
     this.debugToggleFab = document.getElementById("debugToggleFab");
     this.debugButton = document.getElementById("debug6");
     this.debugResetButton = document.getElementById("debugReset");
+    this.debugExportButton = document.getElementById("debugExport");
+    this.debugExportLevelButton = document.getElementById("debugExportLevel");
     this.debugLevelSelect = document.getElementById("debugLevelSelect");
     this.debugThemeSelect = document.getElementById("debugThemeSelect");
     this.shotBounceSizeInput = document.getElementById("shotBounceSize");
@@ -1219,8 +1299,6 @@ class Game {
     this.backButtonScaleValue = document.getElementById("backButtonScaleValue");
     this.trackYOffsetInput = document.getElementById("trackYOffset");
     this.trackYOffsetValue = document.getElementById("trackYOffsetValue");
-    this.fieldScaleInput = document.getElementById("fieldScale");
-    this.fieldScaleValue = document.getElementById("fieldScaleValue");
     this.playfieldScaleInput = document.getElementById("playfieldScale");
     this.playfieldScaleValue = document.getElementById("playfieldScaleValue");
     this.slotSizeScaleInput = document.getElementById("slotSizeScale");
@@ -1248,16 +1326,6 @@ class Game {
     this.bindEvents();
     this.resize();
 
-    this.referenceImage.onload = () => {
-      this.buildReferenceAssets();
-      this.restart();
-    };
-
-    this.referenceImage.onerror = () => {
-      this.gameState = "error";
-      this.invalidate(false);
-    };
-
     this.backButtonImage.onload = () => {
       this.invalidate(false);
     };
@@ -1275,203 +1343,50 @@ class Game {
       document.fonts.ready.then(() => this.invalidate(false));
     }
 
-    if (this.referenceImage.complete) {
-      this.buildReferenceAssets();
-      this.restart();
-    }
+    this.buildReferenceAssets();
+    this.restart();
   }
 
   buildReferenceAssets() {
-    this.referenceCtx.imageSmoothingEnabled = false;
-    this.referenceCtx.clearRect(0, 0, this.width, this.height);
-    this.referenceCtx.drawImage(this.referenceImage, 0, 0, this.width, this.height);
-    try {
-      this.referencePixels = this.referenceCtx.getImageData(0, 0, this.width, this.height).data;
-    } catch {
-      // file:// loads can taint canvas and block getImageData; use fallback field pattern.
-      this.referencePixels = null;
-    }
-
-    const colorGrid = [];
-    for (let row = 0; row < LAYOUT.fieldRows; row++) {
-      colorGrid[row] = [];
-      for (let col = 0; col < LAYOUT.fieldCols; col++) {
-        colorGrid[row][col] = this.getCellColor(col, row);
-      }
-    }
-
-    const findSample = (targetColor, fallback) => {
-      const isInside = (col, row) =>
-        col > 0 && row > 0 && col < LAYOUT.fieldCols - 1 && row < LAYOUT.fieldRows - 1;
-
-      for (let row = 0; row < LAYOUT.fieldRows; row++) {
-        for (let col = 0; col < LAYOUT.fieldCols; col++) {
-          if (colorGrid[row][col] !== targetColor || !isInside(col, row)) {
-            continue;
-          }
-          if (
-            colorGrid[row - 1][col] === targetColor &&
-            colorGrid[row + 1][col] === targetColor &&
-            colorGrid[row][col - 1] === targetColor &&
-            colorGrid[row][col + 1] === targetColor
-          ) {
-            return { col, row };
-          }
-        }
-      }
-
-      for (let row = 0; row < LAYOUT.fieldRows; row++) {
-        for (let col = 0; col < LAYOUT.fieldCols; col++) {
-          if (colorGrid[row][col] === targetColor) {
-            return { col, row };
-          }
-        }
-      }
-
-      return fallback;
-    };
-
-    const greenSample = findSample("green", { col: 0, row: 0 });
-    const blackSample = findSample("black", { col: 1, row: 2 });
-
-    this.sprites.greenTile = this.sliceSprite(
-      REFERENCE_FIELD_X + greenSample.col * REFERENCE_FIELD_STEP + 1,
-      REFERENCE_FIELD_Y + greenSample.row * REFERENCE_FIELD_STEP + 1,
-      REFERENCE_CELL_SIZE,
-      REFERENCE_CELL_SIZE
-    );
-    this.sprites.blackTile = this.suppressGreenTint(this.sliceSprite(
-      REFERENCE_FIELD_X + blackSample.col * REFERENCE_FIELD_STEP + 1,
-      REFERENCE_FIELD_Y + blackSample.row * REFERENCE_FIELD_STEP + 1,
-      REFERENCE_CELL_SIZE,
-      REFERENCE_CELL_SIZE
-    ));
-    this.sprites.holeTile = this.sliceSprite(
-      REFERENCE_FIELD_X + REFERENCE_FIELD_STEP * 3 + 1,
-      REFERENCE_FIELD_Y + REFERENCE_FIELD_STEP * LAYOUT.fieldRows + 24,
-      REFERENCE_CELL_SIZE,
-      REFERENCE_CELL_SIZE
-    );
-    this.sprites.fieldGround = this.makeTileSeamless(this.suppressGreenTint(this.sliceSprite(
-      REFERENCE_FIELD_X + REFERENCE_FIELD_STEP * 3 + 1,
-      REFERENCE_FIELD_Y + REFERENCE_FIELD_STEP * LAYOUT.fieldRows + 24,
-      96,
-      96
-    ), { minGreen: 30, deltaR: 3, deltaB: 3 }));
-    this.sprites.wagon = this.sliceSprite(
-      LAYOUT.wagonSprite.x,
-      LAYOUT.wagonSprite.y,
-      LAYOUT.wagonSprite.w,
-      LAYOUT.wagonSprite.h
-    );
-    this.sprites.wagonMask = this.buildMirroredPatch(
-      LAYOUT.wagonMask.x,
-      LAYOUT.wagonMask.y,
-      LAYOUT.wagonMask.w,
-      LAYOUT.wagonMask.h
-    );
-    this.sprites.grassTile = this.makeTileSeamless(this.sliceSprite(12, 12, 96, 96));
+    this.sprites.greenTile = this.createBlockSprite("green");
+    this.sprites.blackTile = this.createBlockSprite("black");
+    this.sprites.holeTile = null;
+    this.sprites.fieldGround = null;
+    this.sprites.wagon = null;
+    this.sprites.wagonMask = null;
+    this.sprites.grassTile = null;
   }
 
-  sliceSprite(x, y, w, h) {
-    const sprite = document.createElement("canvas");
-    sprite.width = w;
-    sprite.height = h;
-    const spriteCtx = sprite.getContext("2d", { alpha: true });
-    spriteCtx.imageSmoothingEnabled = false;
-    spriteCtx.drawImage(this.referenceLayer, x, y, w, h, 0, 0, w, h);
-    return sprite;
-  }
+  createBlockSprite(color) {
+    const size = Math.max(8, Math.round(LAYOUT.cellSize || 30));
+    const tile = document.createElement("canvas");
+    tile.width = size;
+    tile.height = size;
+    const tileCtx = tile.getContext("2d", { alpha: true });
+    if (!tileCtx) {
+      return null;
+    }
+    const isGreen = color === "green";
+    const base = isGreen ? "#79be3d" : "#3a3a3a";
+    const mid = isGreen ? "#66a831" : "#2f2f2f";
+    const dark = isGreen ? "#4f8224" : "#1d1d1d";
+    const grad = tileCtx.createLinearGradient(0, 0, size, size);
+    grad.addColorStop(0, base);
+    grad.addColorStop(0.56, mid);
+    grad.addColorStop(1, dark);
+    tileCtx.fillStyle = grad;
+    roundedRect(tileCtx, 0, 0, size, size, Math.max(4, Math.round(size * 0.18)));
+    tileCtx.fill();
 
-  suppressGreenTint(sprite, options = {}) {
-    if (!sprite) {
-      return sprite;
-    }
-    const minGreen = options.minGreen ?? 80;
-    const deltaR = options.deltaR ?? 16;
-    const deltaB = options.deltaB ?? 12;
-    const spriteCtx = sprite.getContext("2d", { alpha: true });
-    if (!spriteCtx) {
-      return sprite;
-    }
-    let imageData;
-    try {
-      imageData = spriteCtx.getImageData(0, 0, sprite.width, sprite.height);
-    } catch {
-      return sprite;
-    }
-    const data = imageData.data;
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const a = data[i + 3];
-      if (a === 0) {
-        continue;
-      }
-      if (g > minGreen && g - r > deltaR && g - b > deltaB) {
-        const dark = Math.max(18, Math.min(92, Math.round((r + b) * 0.45)));
-        data[i] = dark;
-        data[i + 1] = dark;
-        data[i + 2] = dark;
-      }
-    }
-    spriteCtx.putImageData(imageData, 0, 0);
-    return sprite;
-  }
+    tileCtx.fillStyle = "rgba(255, 255, 255, 0.18)";
+    roundedRect(tileCtx, 1.5, 1.5, size - 3, size * 0.36, Math.max(3, Math.round(size * 0.16)));
+    tileCtx.fill();
 
-  makeTileSeamless(sprite) {
-    if (!sprite) {
-      return sprite;
-    }
-    const spriteCtx = sprite.getContext("2d", { alpha: true });
-    if (!spriteCtx || sprite.width < 2 || sprite.height < 2) {
-      return sprite;
-    }
-    let imageData;
-    try {
-      imageData = spriteCtx.getImageData(0, 0, sprite.width, sprite.height);
-    } catch {
-      return sprite;
-    }
-
-    const data = imageData.data;
-    const w = sprite.width;
-    const h = sprite.height;
-    const copyPixel = (srcX, srcY, dstX, dstY) => {
-      const src = (srcY * w + srcX) * 4;
-      const dst = (dstY * w + dstX) * 4;
-      data[dst] = data[src];
-      data[dst + 1] = data[src + 1];
-      data[dst + 2] = data[src + 2];
-      data[dst + 3] = data[src + 3];
-    };
-
-    for (let y = 0; y < h; y++) {
-      copyPixel(0, y, w - 1, y);
-    }
-    for (let x = 0; x < w; x++) {
-      copyPixel(x, 0, x, h - 1);
-    }
-    copyPixel(0, 0, w - 1, h - 1);
-
-    spriteCtx.putImageData(imageData, 0, 0);
-    return sprite;
-  }
-
-  buildMirroredPatch(destX, destY, w, h) {
-    const patch = document.createElement("canvas");
-    patch.width = w;
-    patch.height = h;
-    const patchCtx = patch.getContext("2d", { alpha: true });
-    patchCtx.imageSmoothingEnabled = false;
-    const sourceX = this.width - destX - w;
-    patchCtx.save();
-    patchCtx.translate(w, 0);
-    patchCtx.scale(-1, 1);
-    patchCtx.drawImage(this.referenceLayer, sourceX, destY, w, h, 0, 0, w, h);
-    patchCtx.restore();
-    return patch;
+    tileCtx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    tileCtx.lineWidth = 1;
+    roundedRect(tileCtx, 0.5, 0.5, size - 1, size - 1, Math.max(3, Math.round(size * 0.18)) - 0.5);
+    tileCtx.stroke();
+    return tile;
   }
 
   drawTiledBackdrop(ctx, rect, fillColor, palette, shadeDark) {
@@ -1554,12 +1469,6 @@ class Game {
   }
 
   restart() {
-    if (!this.referenceImage.complete) {
-      this.gameState = "loading";
-      this.invalidate(false);
-      return;
-    }
-
     this.blocks = this.createBlocksFromReference();
     this.blocksBySpiral = this.blocks.slice().sort((a, b) => a.spiralIndex - b.spiralIndex);
     this.units = [];
@@ -1674,7 +1583,7 @@ class Game {
     const nextCount = clamp(Math.round(Number(count) || BOTTOM_QUEUE_CARD_COUNT), MIN_QUEUE_CARDS, MAX_QUEUE_CARDS);
     BOTTOM_QUEUE_CARD_COUNT = nextCount;
     const changed = this.cardManager.setQueueCardCount(nextCount);
-    if (changed && this.referenceImage.complete) {
+    if (changed) {
       this.restart();
     }
     return changed;
@@ -1766,9 +1675,8 @@ class Game {
     LAYOUT.spawnPoint.y = Math.round(baseTrackCenterY + baseSpawnOffsetY * effectivePlayfieldScale);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
 
-    const totalFieldScale = effectivePlayfieldScale * FIELD_SCALE;
-    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * totalFieldScale));
-    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * totalFieldScale));
+    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * effectivePlayfieldScale));
+    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * effectivePlayfieldScale));
     const baseFieldCenterX = BASE_LAYOUT.fieldX + (BASE_LAYOUT.fieldCols * BASE_LAYOUT.fieldStep) * 0.5;
     const baseFieldCenterY = BASE_LAYOUT.fieldY + (BASE_LAYOUT.fieldRows * BASE_LAYOUT.fieldStep) * 0.5;
     const shiftedFieldCenterY = baseFieldCenterY + effectiveTrackYOffset;
@@ -1842,7 +1750,7 @@ class Game {
     this.blocksBySpiral = [];
     this.setWagonIdle();
     this.applyDebugLayout();
-    if (restart && this.referenceImage.complete) {
+    if (restart) {
       this.restart();
     }
     this.invalidate(false);
@@ -1854,28 +1762,15 @@ class Game {
     syncThemeGlobals(getThemeConfig(nextThemeId));
     this.currentThemeId = nextThemeId;
 
-    const nextReference = getThemeAsset("referenceImage", "Ref.png");
-    const referenceChanged = this.setImageSource(this.referenceImage, nextReference);
     this.setImageSource(this.backButtonImage, getThemeAsset("backButton", "ui/back_button.png"));
     this.setImageSource(this.timerPanelImage, getThemeAsset("timerPanel", "ui/timer_panel.png"));
     this.setImageSource(this.restartButtonImage, getThemeAsset("restartButton", "ui/restart_button.png"));
-    this.setImageSource(this.losePopupImage, getThemeAsset("losePopup", "ui/lose_popup_ref.png"));
-
-    if (referenceChanged) {
-      this.gameState = "loading";
-      this.invalidate(false);
-      return;
+    this.setImageSource(this.losePopupImage, getThemeAsset("losePopup", "ui/lose_popup_space_ref.png"));
+    this.buildReferenceAssets();
+    if (restart) {
+      this.restart();
     }
-
-    if (!referenceChanged) {
-      if (this.referenceImage.complete) {
-        this.buildReferenceAssets();
-      }
-      if (restart && this.referenceImage.complete) {
-        this.restart();
-      }
-      this.invalidate(false);
-    }
+    this.invalidate(false);
   }
 
   applyContentConfig(levelId, themeId, options = {}) {
@@ -1895,7 +1790,6 @@ class Game {
       topCoinsPanelScale: TOP_COINS_PANEL_SCALE,
       backButtonScale: BACK_BUTTON_SCALE,
       trackYOffset: TRACK_Y_OFFSET,
-      fieldScale: FIELD_SCALE,
       playfieldScale: PLAYFIELD_SCALE,
       slotSizeScale: SLOT_SIZE_SCALE,
       slotYOffset: SLOT_Y_OFFSET,
@@ -1924,7 +1818,6 @@ class Game {
     TOP_COINS_PANEL_SCALE = clamp(Number(settings.topCoinsPanelScale ?? DEBUG_DEFAULTS.topCoinsPanelScale), 0.6, 1.8);
     BACK_BUTTON_SCALE = clamp(Number(settings.backButtonScale ?? DEBUG_DEFAULTS.backButtonScale), 0.6, 1.8);
     TRACK_Y_OFFSET = clamp(Number(settings.trackYOffset ?? DEBUG_DEFAULTS.trackYOffset), -220, 260);
-    FIELD_SCALE = clamp(Number(settings.fieldScale ?? DEBUG_DEFAULTS.fieldScale), 0.65, 1.5);
     PLAYFIELD_SCALE = clamp(Number(settings.playfieldScale ?? DEBUG_DEFAULTS.playfieldScale), 0.7, 1.5);
     SLOT_SIZE_SCALE = clamp(Number(settings.slotSizeScale ?? DEBUG_DEFAULTS.slotSizeScale), 0.6, 1.7);
     SLOT_Y_OFFSET = clamp(Number(settings.slotYOffset ?? DEBUG_DEFAULTS.slotYOffset), -220, 260);
@@ -1940,106 +1833,111 @@ class Game {
 
   loadDebugSettings() {
     try {
-      let raw = window.localStorage.getItem(DEBUG_STORAGE_KEY);
-      if (!raw) {
-        for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
-          raw = window.localStorage.getItem(key);
-          if (raw) {
-            break;
-          }
-        }
-      }
-      if (!raw) {
-        const fromHash = readDebugStateFromHash();
-        if (fromHash) {
-          this.applyDebugSettings({
-            ...DEBUG_DEFAULTS,
-            ...fromHash,
-          });
-          this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
-          this.saveDebugSettings();
-          return;
-        }
-
-        this.applyDebugSettings(DEBUG_DEFAULTS);
-        this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      this.applyDebugSettings({
-        ...DEBUG_DEFAULTS,
-        ...(parsed || {}),
-      });
-      this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
-      this.ensurePlayfieldScaleMigration();
-      this.saveDebugSettings();
-    } catch {
-      this.applyDebugSettings(DEBUG_DEFAULTS);
-      this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
-      this.ensurePlayfieldScaleMigration();
-    }
-  }
-
-  ensurePlayfieldScaleMigration() {
-    try {
-      const migrated = window.localStorage.getItem(PLAYFIELD_SCALE_MIGRATION_KEY);
-      if (migrated === "1") {
-        return;
-      }
-      PLAYFIELD_SCALE = DEBUG_DEFAULTS.playfieldScale;
-      this.applyDebugLayout();
-      window.localStorage.setItem(PLAYFIELD_SCALE_MIGRATION_KEY, "1");
-    } catch {
-      // Ignore storage errors.
-    }
-  }
-
-  saveDebugSettings() {
-    if (this.suppressDebugSave) {
-      return;
-    }
-    const state = this.getDebugSettingsState();
-    const encoded = encodeDebugState(state);
-    if (encoded) {
-      const nextHash = `#dbg=${encoded}`;
-      if (window.location.hash !== nextHash) {
-        try {
-          history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
-        } catch {
-          try {
-            window.location.hash = nextHash;
-          } catch {
-            // Ignore hash update errors; localStorage save below is still authoritative.
-          }
-        }
-      }
-    }
-    try {
-      window.localStorage.setItem(DEBUG_STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Ignore storage errors in private/file-restricted contexts.
-    }
-  }
-
-  clearDebugSettings() {
-    try {
       if (window.location.hash.startsWith("#dbg=")) {
-        try {
-          history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-        } catch {
-          try {
-            window.location.hash = "";
-          } catch {
-            // Ignore hash cleanup errors.
-          }
-        }
+        history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
       }
       window.localStorage.removeItem(DEBUG_STORAGE_KEY);
       for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
         window.localStorage.removeItem(key);
       }
     } catch {
-      // Ignore storage errors in private/file-restricted contexts.
+      // Ignore storage/history errors in restricted contexts.
+    }
+    this.applyDebugSettings(DEBUG_DEFAULTS);
+    // Keep startup deterministic even if external tooling restores form state.
+    PLAYFIELD_SCALE = clamp(Number(DEBUG_DEFAULTS.playfieldScale), 0.7, 1.5);
+    this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
+  }
+
+  saveDebugSettings() {
+    void this.suppressDebugSave;
+    // Debug persistence is intentionally disabled.
+  }
+
+  clearDebugSettings() {
+    // Kept for compatibility with debug reset flow.
+  }
+
+  async exportDebugSettingsJSON() {
+    const state = this.getDebugSettingsState();
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      settings: state,
+    };
+    const json = `${JSON.stringify(payload, null, 2)}\n`;
+    const stamp = payload.exportedAt.replace(/[:.]/g, "-");
+    const fileName = `pixelflow-debug-settings-${stamp}.json`;
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+
+    let copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(json);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (this.debugExportButton) {
+      const original = this.debugExportButton.textContent;
+      this.debugExportButton.textContent = copied ? "скопировано" : "сохранено";
+      setTimeout(() => {
+        if (this.debugExportButton) {
+          this.debugExportButton.textContent = original || "debug json";
+        }
+      }, 1200);
+    }
+  }
+
+  getCurrentLevelExport() {
+    return {
+      exportedAt: new Date().toISOString(),
+      level: cloneData(CURRENT_LEVEL),
+    };
+  }
+
+  async exportCurrentLevelJSON() {
+    const payload = this.getCurrentLevelExport();
+    const json = `${JSON.stringify(payload, null, 2)}\n`;
+    const levelId = String(payload.level?.id || this.currentLevelId || "level").replace(/[^a-z0-9-_]+/gi, "-");
+    const fileName = `${levelId}.json`;
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = fileName;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+
+    let copied = false;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(json);
+        copied = true;
+      } catch {
+        copied = false;
+      }
+    }
+
+    if (this.debugExportLevelButton) {
+      const original = this.debugExportLevelButton.textContent;
+      this.debugExportLevelButton.textContent = copied ? "скопировано" : "сохранено";
+      setTimeout(() => {
+        if (this.debugExportLevelButton) {
+          this.debugExportLevelButton.textContent = original || "уровень json";
+        }
+      }, 1200);
     }
   }
 
@@ -2054,7 +1952,6 @@ class Game {
       [this.coinsPanelScaleInput, TOP_COINS_PANEL_SCALE],
       [this.backButtonScaleInput, BACK_BUTTON_SCALE],
       [this.trackYOffsetInput, TRACK_Y_OFFSET],
-      [this.fieldScaleInput, FIELD_SCALE],
       [this.playfieldScaleInput, PLAYFIELD_SCALE],
       [this.slotSizeScaleInput, SLOT_SIZE_SCALE],
       [this.slotYOffsetInput, SLOT_Y_OFFSET],
@@ -2091,6 +1988,14 @@ class Game {
     return this.cards;
   }
 
+  updateCardQueueAnimations(dt) {
+    return this.cardManager.updateQueueAnimations(dt);
+  }
+
+  hasAnimatingCards() {
+    return this.cardManager.hasAnimatingCards();
+  }
+
   isFrontRowCard(card) {
     return this.cardManager.isFrontRowCard(card);
   }
@@ -2107,16 +2012,6 @@ class Game {
     return this.cardManager.getCardPigCenter(card);
   }
 
-  sampleReferenceCellColor(col, row) {
-    const x = Math.floor(REFERENCE_FIELD_X + col * REFERENCE_FIELD_STEP + REFERENCE_FIELD_STEP * 0.5);
-    const y = Math.floor(REFERENCE_FIELD_Y + row * REFERENCE_FIELD_STEP + REFERENCE_FIELD_STEP * 0.5);
-    const i = (y * this.width + x) * 4;
-    const r = this.referencePixels[i];
-    const g = this.referencePixels[i + 1];
-    const b = this.referencePixels[i + 2];
-    return g > 90 && g - r > 26 && g - b > 22 ? "green" : "black";
-  }
-
   getCellColor(col, row) {
     const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
     const fallbackCell = fallbackRow[col];
@@ -2126,10 +2021,7 @@ class Game {
     if (fallbackCell === "B") {
       return "black";
     }
-    if (!this.referencePixels) {
-      return "black";
-    }
-    return this.sampleReferenceCellColor(col, row);
+    return (col * 5 + row * 3) % 7 < 3 ? "green" : "black";
   }
 
   spawnUnit(cardIndex) {
@@ -2649,7 +2541,7 @@ class Game {
   }
 
   triggerDebug6() {
-    if (!this.referenceImage.complete || this.blocks.length === 0) {
+    if (this.blocks.length === 0) {
       return false;
     }
 
@@ -2719,6 +2611,11 @@ class Game {
   }
 
   update(dt) {
+    const cardsAnimating = this.updateCardQueueAnimations(dt);
+    if (cardsAnimating) {
+      this.needsRender = true;
+    }
+
     if (this.levelStartFade > 0) {
       this.levelStartFade = Math.max(0, this.levelStartFade - dt / LEVEL_START_FADE_DURATION);
     }
@@ -2824,8 +2721,7 @@ class Game {
     ctx.font = "700 42px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const source = getThemeAsset("referenceImage", "Ref.png").split("/").pop() || "Ref.png";
-    const label = this.gameState === "error" ? `${source} failed to load` : `Loading ${source}...`;
+    const label = this.gameState === "error" ? "Failed to initialize game" : "Loading...";
     ctx.fillText(label, this.width / 2, this.height / 2);
   }
 
@@ -3147,8 +3043,10 @@ class Game {
     const t = clamp(this.levelStartFade, 0, 1);
     const alpha = t * t * 0.78;
     ctx.save();
+    // Draw fade in screen space so it covers the full canvas, not just viewport frame.
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = `rgba(0, 0, 0, ${alpha.toFixed(3)})`;
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillRect(0, 0, this.screenWidth, this.screenHeight);
     ctx.restore();
   }
 
@@ -3247,8 +3145,9 @@ class Game {
         continue;
       }
       const center = this.getCardPigCenter(card);
-      this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE, card.color, 1);
-      this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30);
+      const queueScale = clamp(card.queueScale || 1, 0.88, 1.12);
+      this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE * queueScale, card.color, 1);
+      this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30 * queueScale);
     }
   }
 
@@ -3542,68 +3441,95 @@ class Game {
   getLoseCloseRect(popupRect = null) {
     const popup = popupRect || this.getLosePopupRect();
     return {
-      x: popup.x + popup.w * 0.84,
-      y: popup.y + popup.h * 0.02,
-      w: popup.w * 0.13,
-      h: popup.h * 0.13,
+      x: popup.x + popup.w - 76,
+      y: popup.y + 16,
+      w: 58,
+      h: 58,
     };
   }
 
-  drawLoseClock(ctx, centerX, centerY, radius) {
+  drawLoseSpaceBadge(ctx, centerX, centerY, width, height) {
+    const badgeX = centerX - width * 0.5;
+    const badgeY = centerY - height * 0.5;
+
     ctx.save();
-    ctx.shadowColor = "rgba(18, 46, 120, 0.28)";
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 5;
-    const ringGrad = ctx.createLinearGradient(centerX, centerY - radius, centerX, centerY + radius);
-    ringGrad.addColorStop(0, "#3ac6ff");
-    ringGrad.addColorStop(1, "#1f60e8");
-    ctx.fillStyle = ringGrad;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.shadowColor = "rgba(18, 46, 120, 0.2)";
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 8;
+    const panelGrad = ctx.createLinearGradient(badgeX, badgeY, badgeX, badgeY + height);
+    panelGrad.addColorStop(0, "#d7e4fb");
+    panelGrad.addColorStop(1, "#c3d1ee");
+    roundedRect(ctx, badgeX, badgeY, width, height, 24);
+    ctx.fillStyle = panelGrad;
     ctx.fill();
     ctx.restore();
 
+    const conveyorX = badgeX + 34;
+    const conveyorY = badgeY + 98;
+    const conveyorW = width - 68;
+    const conveyorH = 54;
     ctx.save();
-    ctx.fillStyle = "#6ecdf8";
-    ctx.beginPath();
-    ctx.arc(centerX - radius * 0.7, centerY - radius * 0.66, radius * 0.2, 0, Math.PI * 2);
+    const conveyorGrad = ctx.createLinearGradient(conveyorX, conveyorY, conveyorX, conveyorY + conveyorH);
+    conveyorGrad.addColorStop(0, "#5f6885");
+    conveyorGrad.addColorStop(1, "#313a57");
+    roundedRect(ctx, conveyorX, conveyorY, conveyorW, conveyorH, 20);
+    ctx.fillStyle = conveyorGrad;
     ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    ctx.fillStyle = "#f9b11b";
-    ctx.strokeStyle = "#eb7f19";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
     ctx.lineWidth = 2;
-    roundedRect(ctx, centerX - radius * 0.92, centerY - radius * 1.07, radius * 0.36, radius * 0.2, radius * 0.1);
-    ctx.fill();
     ctx.stroke();
-    roundedRect(ctx, centerX + radius * 0.56, centerY - radius * 1.07, radius * 0.36, radius * 0.2, radius * 0.1);
-    ctx.fill();
-    ctx.stroke();
-    roundedRect(ctx, centerX - radius * 0.24, centerY - radius * 1.36, radius * 0.48, radius * 0.2, radius * 0.1);
-    ctx.fill();
-    ctx.stroke();
+    for (let i = 0; i < 5; i++) {
+      const rollerX = conveyorX + 32 + i * ((conveyorW - 64) / 4);
+      ctx.beginPath();
+      ctx.arc(rollerX, conveyorY + conveyorH * 0.5, 9, 0, Math.PI * 2);
+      ctx.fillStyle = "#1d2339";
+      ctx.fill();
+    }
     ctx.restore();
 
+    const slotW = 64;
+    const slotH = 74;
+    const slotGap = 18;
+    const slotsX = centerX - (slotW * 3 + slotGap * 2) * 0.5;
+    const slotsY = badgeY + 28;
+    for (let i = 0; i < 3; i++) {
+      const slotX = slotsX + i * (slotW + slotGap);
+      ctx.save();
+      ctx.fillStyle = "#223054";
+      roundedRect(ctx, slotX, slotsY, slotW, slotH, 18);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      const orbGrad = ctx.createLinearGradient(slotX, slotsY, slotX, slotsY + slotH);
+      orbGrad.addColorStop(0, "#ffb65f");
+      orbGrad.addColorStop(1, "#ff6b57");
+      ctx.fillStyle = orbGrad;
+      ctx.beginPath();
+      ctx.arc(slotX + slotW * 0.5, slotsY + slotH * 0.54, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     ctx.save();
-    ctx.fillStyle = "#e9f4ff";
+    ctx.fillStyle = "#ff8d4e";
     ctx.beginPath();
-    ctx.arc(centerX, centerY, radius * 0.79, 0, Math.PI * 2);
+    ctx.moveTo(centerX, badgeY + 172);
+    ctx.lineTo(centerX - 24, badgeY + 214);
+    ctx.lineTo(centerX + 24, badgeY + 214);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "rgba(17, 68, 170, 0.33)";
-    ctx.lineWidth = radius * 0.06;
-    ctx.stroke();
     ctx.restore();
 
     ctx.save();
-    ctx.fillStyle = "#003895";
-    ctx.font = "900 58px Arial";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 42px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.strokeStyle = "rgba(255,255,255,0.76)";
-    ctx.lineWidth = 5;
-    ctx.strokeText("+60s", centerX, centerY + 2);
-    ctx.fillText("+60s", centerX, centerY + 2);
+    ctx.fillText("NO ROOM", centerX, badgeY + 244);
     ctx.restore();
   }
 
@@ -3757,9 +3683,32 @@ class Game {
     this.loseCloseRect = this.getLoseCloseRect(drawRect);
 
     ctx.save();
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.fillStyle = `rgba(7, 14, 28, ${0.52 * fade})`;
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillRect(0, 0, this.screenWidth, this.screenHeight);
     ctx.restore();
+
+    if (this.losePopupImage.complete && this.losePopupImage.naturalWidth > 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.42 * fade;
+      ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+      ctx.shadowBlur = 34;
+      ctx.shadowOffsetY = 12;
+      roundedRect(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, Math.max(20, drawRect.w * 0.05));
+      ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.imageSmoothingEnabled = true;
+      if ("imageSmoothingQuality" in ctx) {
+        ctx.imageSmoothingQuality = "high";
+      }
+      ctx.drawImage(this.losePopupImage, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+      ctx.restore();
+      return;
+    }
 
     ctx.save();
     ctx.globalAlpha = 0.42 * fade;
@@ -3770,25 +3719,6 @@ class Game {
     ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
     ctx.fill();
     ctx.restore();
-
-    if (this.losePopupImage.complete && this.losePopupImage.naturalWidth > 0) {
-      const cropInset = 6;
-      const sx = cropInset;
-      const sy = cropInset;
-      const sw = Math.max(1, this.losePopupImage.naturalWidth - cropInset * 2);
-      const sh = Math.max(1, this.losePopupImage.naturalHeight - cropInset * 2);
-      ctx.save();
-      ctx.globalAlpha = fade;
-      roundedRect(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, Math.max(20, drawRect.w * 0.05));
-      ctx.clip();
-      ctx.imageSmoothingEnabled = true;
-      if ("imageSmoothingQuality" in ctx) {
-        ctx.imageSmoothingQuality = "high";
-      }
-      ctx.drawImage(this.losePopupImage, sx, sy, sw, sh, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
-      ctx.restore();
-      return;
-    }
 
     ctx.save();
     ctx.globalAlpha = fade;
@@ -3825,12 +3755,11 @@ class Game {
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#474a7a";
     ctx.font = "900 62px Arial";
-    ctx.fillText("OUT OF TIME!", drawRect.x + drawRect.w * 0.5, drawRect.y + 62);
-    ctx.font = "700 47px Arial";
+    ctx.fillText("OUT OF SPACE!", drawRect.x + drawRect.w * 0.5, drawRect.y + 62);
+    ctx.font = "700 28px Arial";
     ctx.fillStyle = "#2dac28";
-    ctx.fillText("Revive", drawRect.x + drawRect.w * 0.36, drawRect.y + 111);
-    ctx.fillStyle = "#474a7a";
-    ctx.fillText("to keep playing", drawRect.x + drawRect.w * 0.6, drawRect.y + 111);
+    ctx.fillText("Clear conveyor and open up", drawRect.x + drawRect.w * 0.5, drawRect.y + 104);
+    ctx.fillText("slots to keep playing!", drawRect.x + drawRect.w * 0.5, drawRect.y + 136);
     ctx.restore();
 
     ctx.save();
@@ -3846,7 +3775,7 @@ class Game {
     ctx.stroke();
     ctx.restore();
 
-    this.drawLoseClock(ctx, drawRect.x + drawRect.w * 0.5, drawRect.y + 255, 80);
+    this.drawLoseSpaceBadge(ctx, drawRect.x + drawRect.w * 0.5, drawRect.y + 314, 430, 250);
     this.drawLoseButtons(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
   }
 
@@ -3945,12 +3874,14 @@ class Game {
 
   hasActiveAnimations() {
     if (this.gameState === "lose") {
-      return this.losePopupAppear < 0.999 || this.levelStartFade > 0.001;
+      return this.losePopupAppear < 0.999 || this.levelStartFade > 0.001 || this.hasAnimatingCards();
     }
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
+    const cardsAnimating = this.hasAnimatingCards();
     const zoomAnimating = Math.abs(this.cameraZoomTarget - this.cameraZoom) > 0.001;
     if (
       (this.gameState === "playing" && hasActiveUnits) ||
+      cardsAnimating ||
       this.projectiles.length > 0 ||
       this.particles.length > 0 ||
       this.impactRings.length > 0 ||
@@ -4103,7 +4034,7 @@ class Game {
       if (!input) {
         return;
       }
-      input.value = formatValue(currentValue);
+      input.value = String(currentValue);
       input.addEventListener("input", () => {
         const parsed = parseValue(input.value);
         const nextValue = onApply(parsed);
@@ -4235,18 +4166,6 @@ class Game {
         TRACK_Y_OFFSET = clamp(value, -220, 260);
         this.applyDebugLayout();
         return TRACK_Y_OFFSET;
-      }
-    );
-    bindRange(
-      this.fieldScaleInput,
-      this.fieldScaleValue,
-      FIELD_SCALE,
-      (value) => Number(value),
-      (value) => `${value.toFixed(2)}x`,
-      (value) => {
-        FIELD_SCALE = clamp(value, 0.65, 1.5);
-        this.applyDebugLayout();
-        return FIELD_SCALE;
       }
     );
     bindRange(
@@ -4414,6 +4333,18 @@ class Game {
         event.preventDefault();
       });
     }
+    if (this.debugExportButton) {
+      this.debugExportButton.addEventListener("click", (event) => {
+        this.exportDebugSettingsJSON();
+        event.preventDefault();
+      });
+    }
+    if (this.debugExportLevelButton) {
+      this.debugExportLevelButton.addEventListener("click", (event) => {
+        this.exportCurrentLevelJSON();
+        event.preventDefault();
+      });
+    }
     if (this.debugToggleFab) {
       this.debugToggleFab.addEventListener("click", (event) => {
         this.toggleDebugPanel();
@@ -4434,8 +4365,8 @@ class Game {
   renderGameToText() {
     return JSON.stringify({
       mode: this.gameState,
-      scene: "reference_reskin",
-      source: getThemeAsset("referenceImage", "Ref.png"),
+      scene: "procedural_reskin",
+      source: "procedural",
       levelId: this.currentLevelId,
       themeId: this.currentThemeId,
       unitTheme: "numbered_slimes",
@@ -4480,10 +4411,20 @@ class Game {
   }
 }
 
-const canvas = document.getElementById("gameCanvas");
-const game = new Game(canvas);
+async function bootstrapGame() {
+  const loadedLevels = await loadLevelDefinitions();
+  rebuildLevelRegistry(loadedLevels.length ? loadedLevels : [BUILTIN_FALLBACK_LEVEL]);
 
-window.game = game;
-window.advanceTime = (ms) => game.advanceTime(ms);
-window.render_game_to_text = () => game.renderGameToText();
-window.debug6 = () => game.triggerDebug6();
+  const initialLevel = getLevelConfig(DEFAULT_LEVEL_ID);
+  syncLevelGlobals(initialLevel);
+
+  const canvas = document.getElementById("gameCanvas");
+  const game = new Game(canvas);
+
+  window.game = game;
+  window.advanceTime = (ms) => game.advanceTime(ms);
+  window.render_game_to_text = () => game.renderGameToText();
+  window.debug6 = () => game.triggerDebug6();
+}
+
+void bootstrapGame();
