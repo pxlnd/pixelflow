@@ -1,17 +1,36 @@
 const LOGICAL_WIDTH = 1024;
 const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
-const MAX_ACTIVE_UNITS = 4;
+const MAX_ACTIVE_UNITS = 5;
 const FIRE_INTERVAL = 0.02;
-const BULLET_SPEED = 3200;
 const BULLET_RADIUS = 8;
-const BULLET_TRAIL_LENGTH = 32;
-const SHOOTER_PIG_SIZE = 117;
-const SHOOTER_HIT_RADIUS = 74;
+const SHOT_TRAIL_DURATION = 0.16;
+const SHOT_BOUNCE_DURATION = 0.16;
+let SHOT_BOUNCE_AMOUNT = 0.2;
+let SHOT_BOUNCE_SPEED = 1;
+let TRACK_UNIT_SPEED = 980;
+let BOTTOM_QUEUE_CARD_COUNT = 7;
+let TOP_PANEL_FONT_SIZE = 67;
+let TOP_LEVEL_PANEL_SCALE = 1.07;
+let TOP_COINS_PANEL_SCALE = 0.8;
+let BACK_BUTTON_SCALE = 1.02;
+let TRACK_Y_OFFSET = 18;
+let FIELD_SCALE = 1.07;
+let PLAYFIELD_SCALE = 0.86;
+let SLOT_SIZE_SCALE = 1;
+let SLOT_Y_OFFSET = -63;
+let TOP_UI_Y_OFFSET = 65;
+let CARD_Y_OFFSET_ALL = -72;
+let CARD_Y_OFFSET_1 = 60;
+let CARD_Y_OFFSET_2 = 7;
+let CARD_Y_OFFSET_3 = 0;
+let CARD_Y_OFFSET_4 = 0;
+const UNIT_BLOCK_SIZE = 74;
+const SHOOTER_HIT_RADIUS = 88;
 const CARD_HITBOX_PADDING_X = 26;
 const CARD_HITBOX_PADDING_TOP = 26;
 const CARD_HITBOX_PADDING_BOTTOM = 22;
-const PARKED_UNIT_TAP_RADIUS = 70;
+const PARKED_UNIT_TAP_RADIUS = 86;
 const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
@@ -21,8 +40,8 @@ const REFERENCE_FIELD_STEP = 32;
 const REFERENCE_CELL_SIZE = 30;
 const BOARD_FILL_COLOR = "#6aa93a";
 const FIELD_UNDERLAY_COLOR = "#6fb53f";
-const SHOOTER_CARD_Y_OFFSET = 132;
-const SHOOTER_SLOT_Y_OFFSET = 28;
+const SHOOTER_CARD_Y_OFFSET = 160;
+const SHOOTER_SLOT_Y_OFFSET = 56;
 const VICTORY_ZOOM_TARGET = 1.12;
 const VICTORY_ZOOM_SPEED = 3.2;
 const VICTORY_CONFETTI_DURATION = 1.8;
@@ -33,34 +52,79 @@ const VICTORY_CONFETTI_RATE = 42;
 const LAUNCH_DURATION = 0.24;
 const LAND_DURATION = 0.2;
 const STREAK_DECAY_TIME = 1.45;
-const CANNON_SHOT_POP_DURATION = 0.24;
+const LOSE_POPUP_ANIM_DURATION = 0.34;
+const LEVEL_START_FADE_DURATION = 0.22;
+const MIN_QUEUE_CARDS = 2;
+const MAX_QUEUE_CARDS = 24;
+const BACK_BUTTON_UI = {
+  x: 34,
+  y: 30,
+  w: 108,
+  h: 108,
+};
+const TOP_PANEL_FONT_WEIGHT = 800;
+const TOP_PANEL_FONT_FAMILY = "\"Baloo 2\", \"Arial Rounded MT Bold\", \"Trebuchet MS\", Arial, sans-serif";
+const TIMER_PANEL_UI = {
+  y: 36,
+  w: 256,
+  h: 95,
+  label: "Level 1",
+  textColor: "#335b90",
+  textStroke: "rgba(255, 255, 255, 0.92)",
+};
+const COINS_UI = {
+  panelY: 36,
+  panelW: 256,
+  panelH: 95,
+  rightMargin: 30,
+  amount: "1375",
+  amountColor: "#15479f",
+  amountStroke: "rgba(255, 255, 255, 0.86)",
+  amountXFactor: 0.67,
+  coinW: 96,
+  coinH: 95,
+  coinOffsetX: -34,
+  coinOffsetY: 0,
+  plusW: 48,
+  plusH: 51,
+  plusOffsetX: 54,
+  plusOffsetY: 50,
+};
+const LOSE_POPUP_UI = {
+  w: 710,
+  h: 728,
+  y: 358,
+  outerRadius: 26,
+  innerPadding: 18,
+  closeSize: 40,
+};
 
 const LAYOUT = {
   fieldX: 220,
-  fieldY: 276,
+  fieldY: 329,
   fieldStep: 32,
   cellSize: 32,
   fieldCols: 18,
   fieldRows: 18,
   track: {
-    x: 96,
-    y: 126,
-    w: 828,
-    h: 876,
-    r: 52,
+    x: 106,
+    y: 189,
+    w: 808,
+    h: 856,
+    r: 50,
   },
-  spawnPoint: { x: 152, y: 936 },
+  spawnPoint: { x: 152, y: 979 },
   cards: [
-    { lane: 0, row: 0, x: 320, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "green", ammo: 40 },
-    { lane: 1, row: 0, x: 560, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "black", ammo: 40 },
-    { lane: 0, row: 1, x: 320, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "green", ammo: 40 },
-    { lane: 1, row: 1, x: 560, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 144, h: 184, color: "black", ammo: 40 },
+    { lane: 0, row: 0, x: 312, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "green", styleKey: "mint", label: 1, ammo: 40 },
+    { lane: 1, row: 0, x: 552, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "black", styleKey: "coral", label: 2, ammo: 40 },
+    { lane: 0, row: 1, x: 312, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "green", styleKey: "sky", label: 3, ammo: 40 },
+    { lane: 1, row: 1, x: 552, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "black", styleKey: "gold", label: 4, ammo: 40 },
   ],
   slots: [
-    { x: 107, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 177, h: 105 },
-    { x: 320, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 176, h: 105 },
-    { x: 529, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 176, h: 105 },
-    { x: 738, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 177, h: 105 },
+    { x: 98, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
+    { x: 311, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
+    { x: 520, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
+    { x: 729, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
   ],
   wagonSprite: {
     x: 44,
@@ -85,6 +149,60 @@ const LAYOUT = {
     h: 1600,
     r: 0,
   },
+};
+
+const BASE_TOP_UI = {
+  timerY: TIMER_PANEL_UI.y,
+  timerW: TIMER_PANEL_UI.w,
+  timerH: TIMER_PANEL_UI.h,
+  coinsY: COINS_UI.panelY,
+  coinsW: COINS_UI.panelW,
+  coinsH: COINS_UI.panelH,
+  backY: BACK_BUTTON_UI.y,
+  backW: BACK_BUTTON_UI.w,
+  backH: BACK_BUTTON_UI.h,
+};
+
+const BASE_LAYOUT = {
+  fieldX: LAYOUT.fieldX,
+  fieldY: LAYOUT.fieldY,
+  fieldStep: LAYOUT.fieldStep,
+  cellSize: LAYOUT.cellSize,
+  fieldCols: LAYOUT.fieldCols,
+  fieldRows: LAYOUT.fieldRows,
+  track: { ...LAYOUT.track },
+  spawnPoint: { ...LAYOUT.spawnPoint },
+  slots: LAYOUT.slots.map((slot) => ({ ...slot })),
+  cards: LAYOUT.cards.map((card) => ({ ...card })),
+};
+
+const DEBUG_STORAGE_KEY = "pixelflow.debug.settings";
+const DEBUG_STORAGE_KEYS_FALLBACK = [
+  "pixelflow.debug.settings.v4",
+  "pixelflow.debug.settings.v3",
+  "pixelflow.debug.settings.v2",
+  "pixelflow.debug.settings.v1",
+];
+const DEBUG_DEFAULTS = {
+  shotBounceAmount: 0.2,
+  shotBounceSpeed: 1,
+  trackUnitSpeed: 980,
+  queueCardCount: 7,
+  topPanelFontSize: 67,
+  topLevelPanelScale: 1.07,
+  topCoinsPanelScale: 0.8,
+  backButtonScale: 1.02,
+  trackYOffset: 18,
+  fieldScale: 1.07,
+  playfieldScale: 0.86,
+  slotSizeScale: 1,
+  slotYOffset: -63,
+  topUiYOffset: 65,
+  cardYOffsetAll: -72,
+  cardYOffset1: 60,
+  cardYOffset2: 7,
+  cardYOffset3: 0,
+  cardYOffset4: 0,
 };
 
 const FALLBACK_FIELD_PATTERN = [
@@ -133,6 +251,45 @@ const CONFETTI_COLORS = ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", 
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getTopPanelFont() {
+  return `${TOP_PANEL_FONT_WEIGHT} ${Math.round(TOP_PANEL_FONT_SIZE)}px ${TOP_PANEL_FONT_FAMILY}`;
+}
+
+function getCardYOffsetByIndex(index) {
+  if (index === 0) return CARD_Y_OFFSET_1;
+  if (index === 1) return CARD_Y_OFFSET_2;
+  if (index === 2) return CARD_Y_OFFSET_3;
+  if (index === 3) return CARD_Y_OFFSET_4;
+  return 0;
+}
+
+function encodeDebugState(state) {
+  try {
+    return encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(state)))));
+  } catch {
+    return "";
+  }
+}
+
+function decodeDebugState(encoded) {
+  try {
+    const json = decodeURIComponent(escape(atob(decodeURIComponent(encoded))));
+    const parsed = JSON.parse(json);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readDebugStateFromHash() {
+  const hash = window.location.hash || "";
+  if (!hash.startsWith("#dbg=")) {
+    return null;
+  }
+  const encoded = hash.slice(5);
+  return decodeDebugState(encoded);
 }
 
 function lerp(a, b, t) {
@@ -225,6 +382,7 @@ class Block {
       LAYOUT.fieldRows - 1 - row
     );
     this.alive = false;
+    this.spiralIndex = Number.MAX_SAFE_INTEGER;
     this.hitFlash = 0;
     this.x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
     this.y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
@@ -239,6 +397,15 @@ class Block {
 class Conveyor {
   constructor() {
     this.trackRect = { ...LAYOUT.track };
+    this.path = [];
+    this.totalLength = 0;
+    this.segmentLengths = [];
+    this.spawnDistance = 0;
+    this.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
+  }
+
+  setTrackRect(trackRect, spawnPoint = LAYOUT.spawnPoint) {
+    this.trackRect = { ...trackRect };
     this.path = createRoundedRectPath(
       this.trackRect.x,
       this.trackRect.y,
@@ -255,7 +422,7 @@ class Conveyor {
       this.segmentLengths.push(segmentLength);
       this.totalLength += segmentLength;
     }
-    this.spawnDistance = this.closestPathDistance(LAYOUT.spawnPoint);
+    this.spawnDistance = this.closestPathDistance(spawnPoint);
   }
 
   pointAtDistance(trackDistance) {
@@ -296,13 +463,15 @@ class Conveyor {
 }
 
 class Unit {
-  constructor(id, color, ammo, launchFrom, conveyor) {
+  constructor(id, color, ammo, launchFrom, conveyor, styleKey, label) {
     this.id = id;
     this.color = color;
     this.ammo = ammo;
     this.maxAmmo = ammo;
+    this.styleKey = styleKey || (color === "green" ? "mint" : "gold");
+    this.label = label ?? id;
     this.slotIndex = null;
-    this.speed = 1260;
+    this.speed = TRACK_UNIT_SPEED;
     this.cooldown = 0;
     this.state = "launching";
     this.launchFrom = { ...launchFrom };
@@ -325,18 +494,33 @@ class Unit {
     this.scaleX = 1;
     this.scaleY = 1;
     this.parkBounce = 0;
-    this.shotPop = 0;
+    this.shotBounceTime = SHOT_BOUNCE_DURATION;
     this.alive = true;
   }
 
-  triggerShotPop() {
-    this.shotPop = 1;
+  triggerShotBounce() {
+    this.shotBounceTime = 0;
+  }
+
+  getShotScale() {
+    if (this.shotBounceTime >= SHOT_BOUNCE_DURATION) {
+      return 1;
+    }
+    const t = clamp(this.shotBounceTime / SHOT_BOUNCE_DURATION, 0, 1);
+    return 1 + SHOT_BOUNCE_AMOUNT * (1 - easeOutCubic(t));
   }
 
   update(dt, game) {
     if (!this.alive) {
       return;
     }
+
+    this.parkBounce = Math.max(0, this.parkBounce - dt * 5.5);
+    const speedMul = Math.max(0.2, SHOT_BOUNCE_SPEED);
+    this.shotBounceTime = Math.min(
+      SHOT_BOUNCE_DURATION,
+      this.shotBounceTime + dt * speedMul,
+    );
 
     if (this.state === "launching") {
       this.launchProgress = Math.min(1, this.launchProgress + dt / LAUNCH_DURATION);
@@ -377,16 +561,31 @@ class Unit {
         return;
       }
 
+      if (this.state === "parked") {
+        if (this.slotIndex !== null) {
+          const slotCenter = game.getSlotCenter(this.slotIndex);
+          if (slotCenter) {
+            this.position = { ...slotCenter };
+          }
+        }
+      }
+
       if (this.state === "moving") {
+        this.speed = TRACK_UNIT_SPEED;
         const delta = this.speed * dt;
         this.loopDistance += delta;
         this.distanceOnTrack -= delta;
         this.position = this.conveyor.pointAtDistance(this.distanceOnTrack);
 
         if (this.loopDistance >= game.conveyor.totalLength) {
+          if (this.ammo > 0 && game.hasTargetForColor(this.color)) {
+            this.loopDistance -= game.conveyor.totalLength;
+            return;
+          }
           const freeSlotIndex = game.claimFreeSlot(this.id);
           if (freeSlotIndex === null) {
             this.alive = false;
+            game.startLoseSequence();
             return;
           }
           this.slotIndex = freeSlotIndex;
@@ -425,22 +624,11 @@ class Unit {
       this.cooldown = FIRE_INTERVAL;
       this.ammo -= 1;
       game.fireProjectile(this, target);
-      this.triggerShotPop();
+      this.triggerShotBounce();
     }
 
-    const velX = (this.position.x - this.prevPosition.x) / Math.max(dt, 0.0001);
-    const velY = (this.position.y - this.prevPosition.y) / Math.max(dt, 0.0001);
-    const speed = Math.hypot(velX, velY);
-    const movementStress = clamp(speed / 920, 0, 1);
-    this.parkBounce = Math.max(0, this.parkBounce - dt * 5.5);
-    this.shotPop = Math.max(0, this.shotPop - dt / CANNON_SHOT_POP_DURATION);
-    const bouncePulse = this.parkBounce > 0 ? Math.sin((1 - this.parkBounce) * Math.PI * 3) * this.parkBounce : 0;
-    const popProgress = 1 - this.shotPop;
-    const popMain = Math.sin(popProgress * Math.PI) * this.shotPop;
-    const popElastic = Math.sin(popProgress * Math.PI * 3.4) * this.shotPop * 0.42;
-    const popScale = popMain * 0.32 + popElastic * 0.12;
-    this.scaleX = 1 + movementStress * 0.09 - bouncePulse * 0.12 + popScale;
-    this.scaleY = 1 - movementStress * 0.08 + bouncePulse * 0.15 + popScale;
+    this.scaleX = 1;
+    this.scaleY = 1;
     this.prevPosition = { ...this.position };
   }
 }
@@ -494,9 +682,152 @@ class SlotManager {
 }
 
 class CardManager {
-  constructor(cardLayouts) {
-    this.cardLayouts = cardLayouts.map((card) => ({ ...card }));
+  constructor(cardLayouts, queueCardCount = BOTTOM_QUEUE_CARD_COUNT) {
+    this.baseLayouts = cardLayouts.map((card) => ({ ...card }));
+    this.updateDerivedLayoutValues();
+    this.queueCardCount = clamp(Math.round(queueCardCount), MIN_QUEUE_CARDS, MAX_QUEUE_CARDS);
+    this.cardLayouts = this.buildLayouts(this.queueCardCount);
     this.cards = [];
+  }
+
+  updateDerivedLayoutValues() {
+    this.laneOrder = [...new Set(this.baseLayouts.map((card) => card.lane))].sort((a, b) => a - b);
+    this.laneCount = Math.max(1, this.laneOrder.length);
+    this.defaultSize = {
+      w: this.baseLayouts[0]?.w || 160,
+      h: this.baseLayouts[0]?.h || 200,
+    };
+    const topRowLayouts = this.baseLayouts.filter((card) => card.row === 0);
+    this.topRowY = topRowLayouts.length > 0 ? Math.min(...topRowLayouts.map((card) => card.y)) : 0;
+    const laneXByLane = {};
+    for (const lane of this.laneOrder) {
+      const front = this.baseLayouts.find((card) => card.lane === lane && card.row === 0);
+      if (front) {
+        laneXByLane[lane] = front.x;
+      }
+    }
+    const firstLaneX = laneXByLane[this.laneOrder[0]] ?? this.baseLayouts[0]?.x ?? 312;
+    const secondLaneX = laneXByLane[this.laneOrder[1]];
+    this.defaultLaneSpacing = secondLaneX !== undefined ? secondLaneX - firstLaneX : 240;
+    this.laneXByLane = laneXByLane;
+    this.rowSpacing = this.deriveRowSpacing();
+  }
+
+  setBaseLayouts(cardLayouts) {
+    this.baseLayouts = cardLayouts.map((card) => ({ ...card }));
+    this.updateDerivedLayoutValues();
+    this.cardLayouts = this.buildLayouts(this.queueCardCount);
+  }
+
+  deriveRowSpacing() {
+    const firstLane = this.laneOrder[0];
+    const laneLayouts = this.baseLayouts
+      .filter((card) => card.lane === firstLane)
+      .sort((a, b) => a.row - b.row);
+    if (laneLayouts.length >= 2) {
+      return Math.max(1, laneLayouts[1].y - laneLayouts[0].y);
+    }
+    return 202;
+  }
+
+  setQueueCardCount(count) {
+    const clamped = clamp(Math.round(count), MIN_QUEUE_CARDS, MAX_QUEUE_CARDS);
+    const changed = clamped !== this.queueCardCount;
+    this.queueCardCount = clamped;
+    this.cardLayouts = this.buildLayouts(this.queueCardCount);
+    return changed;
+  }
+
+  buildLayouts(count) {
+    const layouts = [];
+    for (let i = 0; i < count; i++) {
+      const laneIndex = i % this.laneCount;
+      const lane = this.laneOrder[laneIndex] ?? laneIndex;
+      const row = Math.floor(i / this.laneCount);
+      const fallbackX = (this.baseLayouts[0]?.x ?? 312) + laneIndex * this.defaultLaneSpacing;
+      layouts.push({
+        lane,
+        row,
+        x: this.laneXByLane[lane] ?? fallbackX,
+        y: this.topRowY + row * this.rowSpacing,
+        w: this.defaultSize.w,
+        h: this.defaultSize.h,
+      });
+    }
+    return layouts;
+  }
+
+  distributeColors(cards, blocks) {
+    const colorCounts = blocks.reduce((acc, block) => {
+      acc[block.color] = (acc[block.color] || 0) + 1;
+      return acc;
+    }, {});
+    const colors = Object.keys(colorCounts).filter((color) => colorCounts[color] > 0);
+    if (cards.length === 0) {
+      return colorCounts;
+    }
+    if (colors.length === 0) {
+      for (const card of cards) {
+        card.color = "green";
+      }
+      return colorCounts;
+    }
+
+    const totalBlocks = colors.reduce((sum, color) => sum + colorCounts[color], 0);
+    const targets = colors.map((color) => {
+      const exact = totalBlocks > 0 ? (colorCounts[color] / totalBlocks) * cards.length : cards.length / colors.length;
+      return { color, exact, count: Math.floor(exact), remainder: exact - Math.floor(exact) };
+    });
+
+    for (const target of targets) {
+      if (target.count === 0) {
+        target.count = 1;
+      }
+    }
+
+    let assigned = targets.reduce((sum, target) => sum + target.count, 0);
+    while (assigned > cards.length) {
+      targets.sort((a, b) => (a.remainder - b.remainder) || (b.count - a.count));
+      const candidate = targets.find((target) => target.count > 1);
+      if (!candidate) {
+        break;
+      }
+      candidate.count -= 1;
+      assigned -= 1;
+    }
+    while (assigned < cards.length) {
+      targets.sort((a, b) => (b.remainder - a.remainder) || (b.count - a.count));
+      targets[0].count += 1;
+      assigned += 1;
+    }
+
+    const remaining = new Map(targets.map((target) => [target.color, target.count]));
+    let previousColor = null;
+    for (const card of cards) {
+      const candidates = targets
+        .filter((target) => (remaining.get(target.color) || 0) > 0)
+        .slice()
+        .sort((a, b) => {
+          const remainA = remaining.get(a.color) || 0;
+          const remainB = remaining.get(b.color) || 0;
+          if (remainA !== remainB) {
+            return remainB - remainA;
+          }
+          if (a.color === previousColor && b.color !== previousColor) {
+            return 1;
+          }
+          if (b.color === previousColor && a.color !== previousColor) {
+            return -1;
+          }
+          return 0;
+        });
+      const pick = candidates[0] || targets[0];
+      card.color = pick.color;
+      remaining.set(pick.color, (remaining.get(pick.color) || 0) - 1);
+      previousColor = pick.color;
+    }
+
+    return colorCounts;
   }
 
   resetFromBlocks(blocks) {
@@ -505,17 +836,26 @@ class CardManager {
   }
 
   createFromBlocks(blocks) {
-    const colorCounts = blocks.reduce((acc, block) => {
-      acc[block.color] = (acc[block.color] || 0) + 1;
-      return acc;
-    }, {});
-
     const cards = this.cardLayouts.map((card, index) => ({
       ...card,
       index,
+      color: "green",
+      styleKey: "mint",
+      label: card.label ?? index + 1,
       ammo: 0,
       used: false,
     }));
+    const colorCounts = this.distributeColors(cards, blocks);
+    const styleIndexByColor = {};
+    for (const card of cards) {
+      styleIndexByColor[card.color] = styleIndexByColor[card.color] || 0;
+      if (card.color === "green") {
+        card.styleKey = styleIndexByColor[card.color] % 2 === 0 ? "mint" : "sky";
+      } else {
+        card.styleKey = styleIndexByColor[card.color] % 2 === 0 ? "coral" : "gold";
+      }
+      styleIndexByColor[card.color] += 1;
+    }
 
     const cardIndexesByColor = cards.reduce((acc, card, index) => {
       if (!acc[card.color]) {
@@ -553,27 +893,23 @@ class CardManager {
   normalizeQueues(cards) {
     const lanes = [...new Set(cards.map((card) => card.lane))];
     for (const lane of lanes) {
-      const frontLayout = this.getCardLayout(lane, 0);
-      if (!frontLayout) {
+      const activeInLane = cards
+        .filter((card) => card.lane === lane && !card.used)
+        .sort((a, b) => (a.row - b.row) || (a.index - b.index));
+      if (activeInLane.length === 0) {
         continue;
       }
-      const frontCard = cards.find((card) => card.lane === lane && card.row === 0 && !card.used);
-      if (frontCard) {
-        frontCard.x = frontLayout.x;
-        frontCard.y = frontLayout.y;
-        frontCard.w = frontLayout.w;
-        frontCard.h = frontLayout.h;
-        continue;
-      }
-      const rearCard = cards.find((card) => card.lane === lane && card.row === 1 && !card.used);
-      if (!rearCard) {
-        continue;
-      }
-      rearCard.row = 0;
-      rearCard.x = frontLayout.x;
-      rearCard.y = frontLayout.y;
-      rearCard.w = frontLayout.w;
-      rearCard.h = frontLayout.h;
+      activeInLane.forEach((card, row) => {
+        const layout = this.getCardLayout(lane, row) || this.getCardLayout(lane, 0);
+        if (!layout) {
+          return;
+        }
+        card.row = row;
+        card.x = layout.x;
+        card.y = layout.y;
+        card.w = layout.w;
+        card.h = layout.h;
+      });
     }
     this.cards = cards;
     return cards;
@@ -645,6 +981,18 @@ class Game {
     this.referenceImage = new Image();
     this.referenceImage.src = "Ref.png";
     this.referenceImage.decoding = "sync";
+    this.backButtonImage = new Image();
+    this.backButtonImage.src = "ui/back_button.png";
+    this.backButtonImage.decoding = "sync";
+    this.timerPanelImage = new Image();
+    this.timerPanelImage.src = "ui/timer_panel.png";
+    this.timerPanelImage.decoding = "sync";
+    this.restartButtonImage = new Image();
+    this.restartButtonImage.src = "ui/restart_button.png";
+    this.restartButtonImage.decoding = "sync";
+    this.losePopupImage = new Image();
+    this.losePopupImage.src = "ui/lose_popup_ref.png";
+    this.losePopupImage.decoding = "sync";
 
     this.referenceLayer = document.createElement("canvas");
     this.referenceLayer.width = this.width;
@@ -663,16 +1011,22 @@ class Game {
     };
 
     this.conveyor = new Conveyor();
+    this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
     this.blocks = [];
+    this.blocksBySpiral = [];
     this.units = [];
     this.projectiles = [];
     this.particles = [];
     this.impactRings = [];
+    this.blockWaves = [];
     this.slotBursts = [];
     this.floatTexts = [];
     this.confetti = [];
-    this.cardManager = new CardManager(LAYOUT.cards);
+    this.cardManager = new CardManager(LAYOUT.cards, BOTTOM_QUEUE_CARD_COUNT);
     this.slotManager = new SlotManager(LAYOUT.slots, SLOT_CLAIM_ORDER);
+    this.backButtonRect = { ...BACK_BUTTON_UI };
+    this.restartButtonRect = { x: 0, y: 0, w: COINS_UI.panelW, h: COINS_UI.panelH };
+    this.loseCloseRect = { x: 0, y: 0, w: 0, h: 0 };
     this.cards = [];
     this.wagon = {
       x: LAYOUT.spawnPoint.x,
@@ -701,7 +1055,54 @@ class Game {
     this.victoryConfettiTime = 0;
     this.victoryFloatTime = 0;
     this.victoryConfettiSpawnCarry = 0;
+    this.levelStartFade = 0;
+    this.losePopupAppear = 1;
+    this.debugPanel = document.getElementById("debugPanel");
     this.debugButton = document.getElementById("debug6");
+    this.debugResetButton = document.getElementById("debugReset");
+    this.shotBounceSizeInput = document.getElementById("shotBounceSize");
+    this.shotBounceSizeValue = document.getElementById("shotBounceSizeValue");
+    this.shotBounceSpeedInput = document.getElementById("shotBounceSpeed");
+    this.shotBounceSpeedValue = document.getElementById("shotBounceSpeedValue");
+    this.railSpeedInput = document.getElementById("railSpeed");
+    this.railSpeedValue = document.getElementById("railSpeedValue");
+    this.queueCardsInput = document.getElementById("queueCards");
+    this.queueCardsValue = document.getElementById("queueCardsValue");
+    this.topPanelFontSizeInput = document.getElementById("topPanelFontSize");
+    this.topPanelFontSizeValue = document.getElementById("topPanelFontSizeValue");
+    this.levelPanelScaleInput = document.getElementById("levelPanelScale");
+    this.levelPanelScaleValue = document.getElementById("levelPanelScaleValue");
+    this.coinsPanelScaleInput = document.getElementById("coinsPanelScale");
+    this.coinsPanelScaleValue = document.getElementById("coinsPanelScaleValue");
+    this.backButtonScaleInput = document.getElementById("backButtonScale");
+    this.backButtonScaleValue = document.getElementById("backButtonScaleValue");
+    this.trackYOffsetInput = document.getElementById("trackYOffset");
+    this.trackYOffsetValue = document.getElementById("trackYOffsetValue");
+    this.fieldScaleInput = document.getElementById("fieldScale");
+    this.fieldScaleValue = document.getElementById("fieldScaleValue");
+    this.playfieldScaleInput = document.getElementById("playfieldScale");
+    this.playfieldScaleValue = document.getElementById("playfieldScaleValue");
+    this.slotSizeScaleInput = document.getElementById("slotSizeScale");
+    this.slotSizeScaleValue = document.getElementById("slotSizeScaleValue");
+    this.slotYOffsetInput = document.getElementById("slotYOffset");
+    this.slotYOffsetValue = document.getElementById("slotYOffsetValue");
+    this.topUiYOffsetInput = document.getElementById("topUiYOffset");
+    this.topUiYOffsetValue = document.getElementById("topUiYOffsetValue");
+    this.cardAllYOffsetInput = document.getElementById("cardAllYOffset");
+    this.cardAllYOffsetValue = document.getElementById("cardAllYOffsetValue");
+    this.card1YOffsetInput = document.getElementById("card1YOffset");
+    this.card1YOffsetValue = document.getElementById("card1YOffsetValue");
+    this.card2YOffsetInput = document.getElementById("card2YOffset");
+    this.card2YOffsetValue = document.getElementById("card2YOffsetValue");
+    this.card3YOffsetInput = document.getElementById("card3YOffset");
+    this.card3YOffsetValue = document.getElementById("card3YOffsetValue");
+    this.card4YOffsetInput = document.getElementById("card4YOffset");
+    this.card4YOffsetValue = document.getElementById("card4YOffsetValue");
+    this.debugPanelVisible = false;
+    this.suppressDebugSave = false;
+
+    this.loadDebugSettings();
+    this.initDebugControls();
 
     this.bindEvents();
     this.resize();
@@ -715,6 +1116,23 @@ class Game {
       this.gameState = "error";
       this.invalidate(false);
     };
+
+    this.backButtonImage.onload = () => {
+      this.invalidate(false);
+    };
+    this.timerPanelImage.onload = () => {
+      this.invalidate(false);
+    };
+    this.restartButtonImage.onload = () => {
+      this.invalidate(false);
+    };
+    this.losePopupImage.onload = () => {
+      this.invalidate(false);
+    };
+
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => this.invalidate(false));
+    }
 
     if (this.referenceImage.complete) {
       this.buildReferenceAssets();
@@ -982,10 +1400,12 @@ class Game {
     }
 
     this.blocks = this.createBlocksFromReference();
+    this.blocksBySpiral = this.blocks.slice().sort((a, b) => a.spiralIndex - b.spiralIndex);
     this.units = [];
     this.projectiles = [];
     this.particles = [];
     this.impactRings = [];
+    this.blockWaves = [];
     this.slotBursts = [];
     this.floatTexts = [];
     this.confetti = [];
@@ -1004,9 +1424,12 @@ class Game {
     this.victoryConfettiTime = 0;
     this.victoryFloatTime = 0;
     this.victoryConfettiSpawnCarry = 0;
+    this.levelStartFade = 1;
+    this.losePopupAppear = 1;
 
     this.gameState = "playing";
     this.remainingBlocks = this.blocks.length;
+    this.loseCloseRect = this.getLoseCloseRect();
     this.lastTimestamp = performance.now();
     this.invalidate(true);
   }
@@ -1019,16 +1442,332 @@ class Game {
       for (let col = 0; col < LAYOUT.fieldCols; col++) {
         id += 1;
         const blockColor = this.getCellColor(col, row);
-        blocks.push(new Block(id, col, row, blockColor));
+        const block = new Block(id, col, row, blockColor);
+        const key = `${col},${row}`;
+        if (this.spiralOrderByCell.has(key)) {
+          block.spiralIndex = this.spiralOrderByCell.get(key);
+        }
+        blocks.push(block);
       }
     }
 
     return blocks;
   }
 
+  buildSpiralOrderMap(cols, rows) {
+    const orderByCell = new Map();
+    const total = cols * rows;
+    let order = 0;
+    let x = Math.floor((cols - 1) / 2);
+    let y = Math.floor((rows - 1) / 2);
+    const dirs = [
+      [1, 0],
+      [0, -1],
+      [-1, 0],
+      [0, 1],
+    ];
+
+    const pushCell = (col, row) => {
+      if (col < 0 || row < 0 || col >= cols || row >= rows) {
+        return;
+      }
+      const key = `${col},${row}`;
+      if (orderByCell.has(key)) {
+        return;
+      }
+      orderByCell.set(key, order);
+      order += 1;
+    };
+
+    pushCell(x, y);
+    let stepLength = 1;
+    let dirIndex = 0;
+    while (order < total) {
+      for (let turn = 0; turn < 2; turn++) {
+        const [dx, dy] = dirs[dirIndex % dirs.length];
+        for (let step = 0; step < stepLength; step++) {
+          x += dx;
+          y += dy;
+          pushCell(x, y);
+          if (order >= total) {
+            break;
+          }
+        }
+        dirIndex += 1;
+        if (order >= total) {
+          break;
+        }
+      }
+      stepLength += 1;
+    }
+
+    return orderByCell;
+  }
+
   createCardsFromBlocks() {
     this.cards = this.cardManager.createFromBlocks(this.blocks);
     return this.cards;
+  }
+
+  setQueueCardCount(count) {
+    const nextCount = clamp(Math.round(Number(count) || BOTTOM_QUEUE_CARD_COUNT), MIN_QUEUE_CARDS, MAX_QUEUE_CARDS);
+    BOTTOM_QUEUE_CARD_COUNT = nextCount;
+    const changed = this.cardManager.setQueueCardCount(nextCount);
+    if (changed && this.referenceImage.complete) {
+      this.restart();
+    }
+    return changed;
+  }
+
+  applyDebugLayout() {
+    BACK_BUTTON_UI.y = Math.round(BASE_TOP_UI.backY + TOP_UI_Y_OFFSET);
+    TIMER_PANEL_UI.y = Math.round(BASE_TOP_UI.timerY + TOP_UI_Y_OFFSET);
+    COINS_UI.panelY = Math.round(BASE_TOP_UI.coinsY + TOP_UI_Y_OFFSET);
+
+    TIMER_PANEL_UI.w = Math.round(BASE_TOP_UI.timerW * TOP_LEVEL_PANEL_SCALE);
+    TIMER_PANEL_UI.h = Math.round(BASE_TOP_UI.timerH * TOP_LEVEL_PANEL_SCALE);
+    COINS_UI.panelW = Math.round(BASE_TOP_UI.coinsW * TOP_COINS_PANEL_SCALE);
+    COINS_UI.panelH = Math.round(BASE_TOP_UI.coinsH * TOP_COINS_PANEL_SCALE);
+    this.backButtonRect.y = BACK_BUTTON_UI.y;
+    this.backButtonRect.w = Math.round(BASE_TOP_UI.backW * BACK_BUTTON_SCALE);
+    this.backButtonRect.h = Math.round(BASE_TOP_UI.backH * BACK_BUTTON_SCALE);
+    this.restartButtonRect = this.getRestartButtonRect();
+
+    const baseTrackCenterX = BASE_LAYOUT.track.x + BASE_LAYOUT.track.w * 0.5;
+    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + TRACK_Y_OFFSET;
+    LAYOUT.track.w = Math.max(120, Math.round(BASE_LAYOUT.track.w * PLAYFIELD_SCALE));
+    LAYOUT.track.h = Math.max(120, Math.round(BASE_LAYOUT.track.h * PLAYFIELD_SCALE));
+    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * PLAYFIELD_SCALE));
+    LAYOUT.track.x = Math.round(baseTrackCenterX - LAYOUT.track.w * 0.5);
+    LAYOUT.track.y = Math.round(baseTrackCenterY - LAYOUT.track.h * 0.5);
+    const baseSpawnOffsetX = BASE_LAYOUT.spawnPoint.x - baseTrackCenterX;
+    const baseSpawnOffsetY = BASE_LAYOUT.spawnPoint.y - (BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5);
+    LAYOUT.spawnPoint.x = Math.round(baseTrackCenterX + baseSpawnOffsetX * PLAYFIELD_SCALE);
+    LAYOUT.spawnPoint.y = Math.round(baseTrackCenterY + baseSpawnOffsetY * PLAYFIELD_SCALE);
+    this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
+
+    const totalFieldScale = PLAYFIELD_SCALE * FIELD_SCALE;
+    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * totalFieldScale));
+    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * totalFieldScale));
+    const baseFieldCenterX = BASE_LAYOUT.fieldX + (BASE_LAYOUT.fieldCols * BASE_LAYOUT.fieldStep) * 0.5;
+    const baseFieldCenterY = BASE_LAYOUT.fieldY + (BASE_LAYOUT.fieldRows * BASE_LAYOUT.fieldStep) * 0.5;
+    const shiftedFieldCenterY = baseFieldCenterY + TRACK_Y_OFFSET;
+    const fieldW = BASE_LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const fieldH = BASE_LAYOUT.fieldRows * LAYOUT.fieldStep;
+    LAYOUT.fieldX = Math.round(baseFieldCenterX - fieldW * 0.5);
+    LAYOUT.fieldY = Math.round(shiftedFieldCenterY - fieldH * 0.5);
+
+    for (const block of this.blocks) {
+      block.x = LAYOUT.fieldX + block.col * LAYOUT.fieldStep;
+      block.y = LAYOUT.fieldY + block.row * LAYOUT.fieldStep;
+      block.size = LAYOUT.cellSize;
+    }
+
+    for (let i = 0; i < LAYOUT.slots.length; i++) {
+      const baseSlot = BASE_LAYOUT.slots[i];
+      const slot = LAYOUT.slots[i];
+      if (!baseSlot || !slot) {
+        continue;
+      }
+      const w = Math.max(90, Math.round(baseSlot.w * SLOT_SIZE_SCALE));
+      const h = Math.max(72, Math.round(baseSlot.h * SLOT_SIZE_SCALE));
+      const centerX = baseSlot.x + baseSlot.w * 0.5;
+      const centerY = baseSlot.y + baseSlot.h * 0.5 + SLOT_Y_OFFSET;
+      slot.w = w;
+      slot.h = h;
+      slot.x = Math.round(centerX - w * 0.5);
+      slot.y = Math.round(centerY - h * 0.5);
+    }
+
+    const dynamicCardLayouts = BASE_LAYOUT.cards.map((baseCard, index) => ({
+      ...baseCard,
+      y: Math.round(baseCard.y + CARD_Y_OFFSET_ALL + getCardYOffsetByIndex(index)),
+    }));
+    this.cardManager.setBaseLayouts(dynamicCardLayouts);
+    this.cardManager.setQueueCardCount(this.cardManager.queueCardCount);
+    this.cards = this.cardManager.normalizeQueues(this.cards);
+
+    this.invalidate(false);
+  }
+
+  getDebugSettingsState() {
+    return {
+      shotBounceAmount: SHOT_BOUNCE_AMOUNT,
+      shotBounceSpeed: SHOT_BOUNCE_SPEED,
+      trackUnitSpeed: TRACK_UNIT_SPEED,
+      queueCardCount: BOTTOM_QUEUE_CARD_COUNT,
+      topPanelFontSize: TOP_PANEL_FONT_SIZE,
+      topLevelPanelScale: TOP_LEVEL_PANEL_SCALE,
+      topCoinsPanelScale: TOP_COINS_PANEL_SCALE,
+      backButtonScale: BACK_BUTTON_SCALE,
+      trackYOffset: TRACK_Y_OFFSET,
+      fieldScale: FIELD_SCALE,
+      playfieldScale: PLAYFIELD_SCALE,
+      slotSizeScale: SLOT_SIZE_SCALE,
+      slotYOffset: SLOT_Y_OFFSET,
+      topUiYOffset: TOP_UI_Y_OFFSET,
+      cardYOffsetAll: CARD_Y_OFFSET_ALL,
+      cardYOffset1: CARD_Y_OFFSET_1,
+      cardYOffset2: CARD_Y_OFFSET_2,
+      cardYOffset3: CARD_Y_OFFSET_3,
+      cardYOffset4: CARD_Y_OFFSET_4,
+    };
+  }
+
+  applyDebugSettings(settings) {
+    SHOT_BOUNCE_AMOUNT = clamp(Number(settings.shotBounceAmount ?? DEBUG_DEFAULTS.shotBounceAmount), 0.05, 0.7);
+    SHOT_BOUNCE_SPEED = clamp(Number(settings.shotBounceSpeed ?? DEBUG_DEFAULTS.shotBounceSpeed), 0.4, 2.6);
+    TRACK_UNIT_SPEED = clamp(Number(settings.trackUnitSpeed ?? DEBUG_DEFAULTS.trackUnitSpeed), 420, 1400);
+    BOTTOM_QUEUE_CARD_COUNT = clamp(
+      Math.round(Number(settings.queueCardCount ?? DEBUG_DEFAULTS.queueCardCount)),
+      MIN_QUEUE_CARDS,
+      MAX_QUEUE_CARDS
+    );
+    TOP_PANEL_FONT_SIZE = clamp(Number(settings.topPanelFontSize ?? DEBUG_DEFAULTS.topPanelFontSize), 24, 80);
+    TOP_LEVEL_PANEL_SCALE = clamp(Number(settings.topLevelPanelScale ?? DEBUG_DEFAULTS.topLevelPanelScale), 0.6, 1.8);
+    TOP_COINS_PANEL_SCALE = clamp(Number(settings.topCoinsPanelScale ?? DEBUG_DEFAULTS.topCoinsPanelScale), 0.6, 1.8);
+    BACK_BUTTON_SCALE = clamp(Number(settings.backButtonScale ?? DEBUG_DEFAULTS.backButtonScale), 0.6, 1.8);
+    TRACK_Y_OFFSET = clamp(Number(settings.trackYOffset ?? DEBUG_DEFAULTS.trackYOffset), -220, 260);
+    FIELD_SCALE = clamp(Number(settings.fieldScale ?? DEBUG_DEFAULTS.fieldScale), 0.65, 1.5);
+    PLAYFIELD_SCALE = clamp(Number(settings.playfieldScale ?? DEBUG_DEFAULTS.playfieldScale), 0.7, 1.5);
+    SLOT_SIZE_SCALE = clamp(Number(settings.slotSizeScale ?? DEBUG_DEFAULTS.slotSizeScale), 0.6, 1.7);
+    SLOT_Y_OFFSET = clamp(Number(settings.slotYOffset ?? DEBUG_DEFAULTS.slotYOffset), -220, 260);
+    TOP_UI_Y_OFFSET = clamp(Number(settings.topUiYOffset ?? DEBUG_DEFAULTS.topUiYOffset), -60, 220);
+    CARD_Y_OFFSET_ALL = clamp(Number(settings.cardYOffsetAll ?? DEBUG_DEFAULTS.cardYOffsetAll), -260, 260);
+    CARD_Y_OFFSET_1 = clamp(Number(settings.cardYOffset1 ?? DEBUG_DEFAULTS.cardYOffset1), -260, 260);
+    CARD_Y_OFFSET_2 = clamp(Number(settings.cardYOffset2 ?? DEBUG_DEFAULTS.cardYOffset2), -260, 260);
+    CARD_Y_OFFSET_3 = clamp(Number(settings.cardYOffset3 ?? DEBUG_DEFAULTS.cardYOffset3), -260, 260);
+    CARD_Y_OFFSET_4 = clamp(Number(settings.cardYOffset4 ?? DEBUG_DEFAULTS.cardYOffset4), -260, 260);
+  }
+
+  loadDebugSettings() {
+    try {
+      const fromHash = readDebugStateFromHash();
+      if (fromHash) {
+        this.applyDebugSettings({
+          ...DEBUG_DEFAULTS,
+          ...fromHash,
+          // Keep this slider fixed to the product default on every reload.
+          playfieldScale: DEBUG_DEFAULTS.playfieldScale,
+        });
+        this.saveDebugSettings();
+        return;
+      }
+
+      let raw = window.localStorage.getItem(DEBUG_STORAGE_KEY);
+      if (!raw) {
+        for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
+          raw = window.localStorage.getItem(key);
+          if (raw) {
+            break;
+          }
+        }
+      }
+      if (!raw) {
+        this.applyDebugSettings(DEBUG_DEFAULTS);
+        return;
+      }
+      const parsed = JSON.parse(raw);
+      this.applyDebugSettings({
+        ...DEBUG_DEFAULTS,
+        ...(parsed || {}),
+        // Keep this slider fixed to the product default on every reload.
+        playfieldScale: DEBUG_DEFAULTS.playfieldScale,
+      });
+      this.saveDebugSettings();
+    } catch {
+      this.applyDebugSettings(DEBUG_DEFAULTS);
+    }
+  }
+
+  saveDebugSettings() {
+    if (this.suppressDebugSave) {
+      return;
+    }
+    const state = this.getDebugSettingsState();
+    const encoded = encodeDebugState(state);
+    if (encoded) {
+      const nextHash = `#dbg=${encoded}`;
+      if (window.location.hash !== nextHash) {
+        try {
+          history.replaceState(null, "", `${window.location.pathname}${window.location.search}${nextHash}`);
+        } catch {
+          try {
+            window.location.hash = nextHash;
+          } catch {
+            // Ignore hash update errors; localStorage save below is still authoritative.
+          }
+        }
+      }
+    }
+    try {
+      window.localStorage.setItem(DEBUG_STORAGE_KEY, JSON.stringify(state));
+    } catch {
+      // Ignore storage errors in private/file-restricted contexts.
+    }
+  }
+
+  clearDebugSettings() {
+    try {
+      if (window.location.hash.startsWith("#dbg=")) {
+        try {
+          history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+        } catch {
+          try {
+            window.location.hash = "";
+          } catch {
+            // Ignore hash cleanup errors.
+          }
+        }
+      }
+      window.localStorage.removeItem(DEBUG_STORAGE_KEY);
+      for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // Ignore storage errors in private/file-restricted contexts.
+    }
+  }
+
+  syncDebugInputsFromState() {
+    const pairs = [
+      [this.shotBounceSizeInput, SHOT_BOUNCE_AMOUNT],
+      [this.shotBounceSpeedInput, SHOT_BOUNCE_SPEED],
+      [this.railSpeedInput, TRACK_UNIT_SPEED],
+      [this.queueCardsInput, BOTTOM_QUEUE_CARD_COUNT],
+      [this.topPanelFontSizeInput, TOP_PANEL_FONT_SIZE],
+      [this.levelPanelScaleInput, TOP_LEVEL_PANEL_SCALE],
+      [this.coinsPanelScaleInput, TOP_COINS_PANEL_SCALE],
+      [this.backButtonScaleInput, BACK_BUTTON_SCALE],
+      [this.trackYOffsetInput, TRACK_Y_OFFSET],
+      [this.fieldScaleInput, FIELD_SCALE],
+      [this.playfieldScaleInput, PLAYFIELD_SCALE],
+      [this.slotSizeScaleInput, SLOT_SIZE_SCALE],
+      [this.slotYOffsetInput, SLOT_Y_OFFSET],
+      [this.topUiYOffsetInput, TOP_UI_Y_OFFSET],
+      [this.cardAllYOffsetInput, CARD_Y_OFFSET_ALL],
+      [this.card1YOffsetInput, CARD_Y_OFFSET_1],
+      [this.card2YOffsetInput, CARD_Y_OFFSET_2],
+      [this.card3YOffsetInput, CARD_Y_OFFSET_3],
+      [this.card4YOffsetInput, CARD_Y_OFFSET_4],
+    ];
+    for (const [input, value] of pairs) {
+      if (!input) {
+        continue;
+      }
+      input.value = String(value);
+      input.dispatchEvent(new Event("input"));
+    }
+  }
+
+  resetDebugSettings() {
+    this.suppressDebugSave = true;
+    this.applyDebugSettings(DEBUG_DEFAULTS);
+    this.syncDebugInputsFromState();
+    this.suppressDebugSave = false;
+    this.clearDebugSettings();
+    this.applyDebugLayout();
+    this.invalidate(false);
   }
 
   normalizeShooterQueues(cards) {
@@ -1075,7 +1814,8 @@ class Game {
       return false;
     }
 
-    if (this.units.length >= MAX_ACTIVE_UNITS) {
+    const activeUnitCount = this.units.reduce((count, unit) => count + (unit.alive ? 1 : 0), 0);
+    if (activeUnitCount >= MAX_ACTIVE_UNITS) {
       return false;
     }
     const card = this.cards[cardIndex];
@@ -1107,7 +1847,9 @@ class Game {
       card.color,
       card.ammo,
       launchFrom,
-      this.conveyor
+      this.conveyor,
+      card.styleKey,
+      card.label
     );
     this.units.push(unit);
     card.used = true;
@@ -1158,7 +1900,6 @@ class Game {
     unit.distanceOnTrack = this.conveyor.spawnDistance;
     unit.cooldown = 0;
     unit.parkBounce = 0;
-    unit.shotPop = 0;
     unit.prevPosition = { ...unit.position };
     this.invalidate(true);
     return true;
@@ -1316,105 +2057,129 @@ class Game {
     return null;
   }
 
-  findTargetOnLine(sourcePoint, color, direction) {
-    const lineHalfWidth = LAYOUT.cellSize * 0.42;
-    const activeInnerLayer = this.getActiveInnerLayer();
-    if (activeInnerLayer < 0) {
+  getLineHitForBlock(sourcePoint, direction, block, lineHalfWidth) {
+    const center = this.blockCenter(block);
+    const dx = center.x - sourcePoint.x;
+    const dy = center.y - sourcePoint.y;
+    const forwardDistance = dx * direction.x + dy * direction.y;
+    if (forwardDistance <= 0) {
       return null;
     }
-    const reservedTargets = new Set(
-      this.projectiles
-        .filter((projectile) => projectile.target && !projectile.target.alive)
-        .map((projectile) => projectile.target.id)
-    );
-    let best = null;
-    let bestLayer = -1;
-    let bestSideDepth = Infinity;
-    let bestForwardDistance = Infinity;
-    for (const block of this.blocks) {
-      if (block.alive || block.color !== color || reservedTargets.has(block.id)) {
-        continue;
-      }
-      if (block.layer !== activeInnerLayer) {
-        continue;
-      }
-      const sideDepth =
-        direction.side === "left"
-          ? block.col
-          : direction.side === "right"
-            ? LAYOUT.fieldCols - 1 - block.col
-            : direction.side === "top"
-              ? block.row
-              : LAYOUT.fieldRows - 1 - block.row;
-      const center = this.blockCenter(block);
-      const dx = center.x - sourcePoint.x;
-      const dy = center.y - sourcePoint.y;
-      const forwardDistance = dx * direction.x + dy * direction.y;
-      if (forwardDistance <= 0) {
-        continue;
-      }
-      const sideDistance = Math.abs(dx * direction.y - dy * direction.x);
-      if (sideDistance > lineHalfWidth) {
-        continue;
-      }
-      const betterLayer = block.layer > bestLayer;
-      const sameLayer = block.layer === bestLayer;
-      const betterDepth = sameLayer && sideDepth < bestSideDepth;
-      const sameDepth = sameLayer && sideDepth === bestSideDepth;
-      const betterDistance = sameDepth && forwardDistance < bestForwardDistance;
-      if (!betterLayer && !betterDepth && !betterDistance) {
-        continue;
-      }
-      best = block;
-      bestLayer = block.layer;
-      bestSideDepth = sideDepth;
-      bestForwardDistance = forwardDistance;
+    const sideDistance = Math.abs(dx * direction.y - dy * direction.x);
+    if (sideDistance > lineHalfWidth) {
+      return null;
     }
-
-    return best;
+    return { forwardDistance, sideDistance };
   }
 
-  getActiveInnerLayer() {
-    let maxLayer = -1;
+  isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth) {
     for (const block of this.blocks) {
-      if (!block.alive && block.layer > maxLayer) {
-        maxLayer = block.layer;
+      if (!block.alive) {
+        continue;
+      }
+      const hit = this.getLineHitForBlock(sourcePoint, direction, block, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (hit.forwardDistance < targetForwardDistance - 0.0001) {
+        return true;
       }
     }
-    return maxLayer;
+    return false;
+  }
+
+  getNextSpiralTarget() {
+    for (const block of this.blocksBySpiral) {
+      if (!block.alive) {
+        return block;
+      }
+    }
+    return null;
+  }
+
+  getNextSpiralTargetForColor(color) {
+    const nextTarget = this.getNextSpiralTarget();
+    if (!nextTarget || nextTarget.color !== color) {
+      return null;
+    }
+    return nextTarget;
+  }
+
+  canColorShootNextSpiralTarget(color) {
+    const target = this.getNextSpiralTargetForColor(color);
+    if (!target) {
+      return false;
+    }
+    const targetCenter = this.blockCenter(target);
+    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    const probes = [
+      {
+        sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: 1, y: 0 },
+      },
+      {
+        sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: -1, y: 0 },
+      },
+      {
+        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
+        direction: { x: 0, y: 1 },
+      },
+      {
+        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
+        direction: { x: 0, y: -1 },
+      },
+    ];
+
+    for (const probe of probes) {
+      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (this.isPathBlockedByPlacedBlocks(probe.sourcePoint, probe.direction, hit.forwardDistance, lineHalfWidth * 0.9)) {
+        continue;
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  findTargetOnLine(sourcePoint, color, direction) {
+    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    const nextSpiralTarget = this.getNextSpiralTargetForColor(color);
+    if (!nextSpiralTarget) {
+      return null;
+    }
+    const targetHit = this.getLineHitForBlock(sourcePoint, direction, nextSpiralTarget, lineHalfWidth);
+    if (!targetHit) {
+      return null;
+    }
+    if (this.isPathBlockedByPlacedBlocks(sourcePoint, direction, targetHit.forwardDistance, lineHalfWidth * 0.9)) {
+      return null;
+    }
+    return nextSpiralTarget;
+  }
+
+  hasTargetForColor(color) {
+    if (!color) {
+      return false;
+    }
+    return this.canColorShootNextSpiralTarget(color);
   }
 
   fireProjectile(unit, block) {
     const target = this.blockCenter(block);
-    const dx = target.x - unit.position.x;
-    const dy = target.y - unit.position.y;
-    const dist = Math.max(1, Math.hypot(dx, dy));
-    const life = Math.max(0.03, dist / BULLET_SPEED);
-    const nx = -dy / dist;
-    const ny = dx / dist;
-    const arcStrength = Math.min(52, Math.max(16, dist * 0.14));
-    const arcSign = (unit.id + block.id) % 2 === 0 ? 1 : -1;
-    const controlX = (unit.position.x + target.x) * 0.5 + nx * arcStrength * arcSign;
-    const controlY = (unit.position.y + target.y) * 0.5 + ny * arcStrength * arcSign;
+    this.damageBlock(block, unit.color);
 
     this.projectiles.push({
-      x: unit.position.x,
-      y: unit.position.y,
       fromX: unit.position.x,
       fromY: unit.position.y,
       toX: target.x,
       toY: target.y,
-      controlX,
-      controlY,
-      life,
-      maxLife: life,
-      target: block,
+      life: SHOT_TRAIL_DURATION,
+      maxLife: SHOT_TRAIL_DURATION,
       color: unit.color,
-      radius: BULLET_RADIUS * 0.9,
-      trailLength: BULLET_TRAIL_LENGTH * 1.05,
-      ghostTrailCount: 6,
-      trail: [],
-      trailEmitCarry: 0,
     });
   }
 
@@ -1428,8 +2193,10 @@ class Game {
     this.remainingBlocks -= 1;
 
     const center = this.blockCenter(block);
-    this.spawnParticles(center.x, center.y, color, 18);
-    this.spawnImpactRing(center.x, center.y, color, 1);
+    this.spawnParticles(center.x, center.y, color, 28);
+    this.spawnImpactRing(center.x, center.y, color, 1.1);
+    this.spawnImpactRing(center.x, center.y, color, 1.65);
+    this.spawnBlockWave(center.x, center.y);
 
     this.successStreak += 1;
     this.streakTimer = STREAK_DECAY_TIME;
@@ -1442,6 +2209,29 @@ class Game {
       this.successStreak = 4;
     }
 
+  }
+
+  spawnBlockWave(x, y) {
+    this.blockWaves.push({
+      x,
+      y,
+      life: 0.42,
+      maxLife: 0.42,
+      startR: 8,
+      endR: 300,
+      bandWidth: 34,
+      jumpHeight: 13,
+    });
+    this.blockWaves.push({
+      x,
+      y,
+      life: 0.34,
+      maxLife: 0.34,
+      startR: 24,
+      endR: 340,
+      bandWidth: 46,
+      jumpHeight: 7,
+    });
   }
 
   blockCenter(block) {
@@ -1469,7 +2259,7 @@ class Game {
     }
   }
 
-  hasSpawnablePigs() {
+  hasSpawnableSlimes() {
     if (this.units.some((unit) => unit.alive)) {
       return true;
     }
@@ -1486,7 +2276,7 @@ class Game {
     if (this.projectiles.length > 0) {
       return false;
     }
-    return !this.hasSpawnablePigs();
+    return !this.hasSpawnableSlimes();
   }
 
   startVictorySequence() {
@@ -1510,6 +2300,29 @@ class Game {
     this.cameraShakeX = 0;
     this.cameraShakeY = 0;
     this.spawnConfettiBurst(64);
+  }
+
+  startLoseSequence() {
+    if (this.gameState !== "playing") {
+      return;
+    }
+    this.gameState = "lose";
+    this.units = [];
+    this.projectiles = [];
+    this.particles = [];
+    this.impactRings = [];
+    this.blockWaves = [];
+    this.slotBursts = [];
+    this.floatTexts = [];
+    this.slotManager.reset();
+    for (const block of this.blocks) {
+      block.hitFlash = 0;
+    }
+    this.successStreak = 0;
+    this.streakTimer = 0;
+    this.losePopupAppear = 0;
+    this.loseCloseRect = this.getLoseCloseRect();
+    this.invalidate(true);
   }
 
   triggerDebug6() {
@@ -1583,6 +2396,10 @@ class Game {
   }
 
   update(dt) {
+    if (this.levelStartFade > 0) {
+      this.levelStartFade = Math.max(0, this.levelStartFade - dt / LEVEL_START_FADE_DURATION);
+    }
+
     if (this.gameState === "victory") {
       this.victoryConfettiTime = Math.max(0, this.victoryConfettiTime - dt);
       this.victoryConfettiSpawnCarry += dt * VICTORY_CONFETTI_RATE;
@@ -1597,6 +2414,10 @@ class Game {
       this.cameraShakeTime = 0;
       this.cameraShakeX = 0;
       this.cameraShakeY = 0;
+      return;
+    }
+    if (this.gameState === "lose") {
+      this.losePopupAppear = Math.min(1, this.losePopupAppear + dt / LOSE_POPUP_ANIM_DURATION);
       return;
     }
 
@@ -1616,45 +2437,12 @@ class Game {
     }
     this.units = this.units.filter((unit) => unit.alive);
 
-    const nextProjectiles = [];
-    for (const projectile of this.projectiles) {
-      projectile.life -= dt;
-      if (projectile.life > 0) {
-        const fade = projectile.maxLife > 0 ? projectile.life / projectile.maxLife : 0;
-        const progress = easeOutCubic(1 - fade);
-        const head = quadraticBezierPoint(
-          { x: projectile.fromX, y: projectile.fromY },
-          { x: projectile.controlX, y: projectile.controlY },
-          { x: projectile.toX, y: projectile.toY },
-          progress
-        );
-        projectile.x = head.x;
-        projectile.y = head.y;
-        projectile.trailEmitCarry += dt * 95;
-        const emitCount = Math.floor(projectile.trailEmitCarry);
-        if (emitCount > 0) {
-          projectile.trailEmitCarry -= emitCount;
-          for (let i = 0; i < emitCount; i++) {
-            projectile.trail.push({
-              x: projectile.x + (Math.random() - 0.5) * 4,
-              y: projectile.y + (Math.random() - 0.5) * 4,
-              life: 1,
-            });
-          }
-        }
-        projectile.trail = projectile.trail
-          .map((point) => ({
-            ...point,
-            life: point.life - dt * 6.5,
-          }))
-          .filter((point) => point.life > 0)
-          .slice(-12);
-        nextProjectiles.push(projectile);
-      } else {
-        this.damageBlock(projectile.target, projectile.color);
-      }
-    }
-    this.projectiles = nextProjectiles;
+    this.projectiles = this.projectiles
+      .map((projectile) => ({
+        ...projectile,
+        life: projectile.life - dt,
+      }))
+      .filter((projectile) => projectile.life > 0);
 
     this.particles = this.particles
       .map((particle) => ({
@@ -1673,6 +2461,13 @@ class Game {
         life: ring.life - dt,
       }))
       .filter((ring) => ring.life > 0);
+
+    this.blockWaves = this.blockWaves
+      .map((wave) => ({
+        ...wave,
+        life: wave.life - dt,
+      }))
+      .filter((wave) => wave.life > 0);
 
     this.slotBursts = this.slotBursts
       .map((burst) => ({
@@ -1858,36 +2653,66 @@ class Game {
     const alpha = options.alpha ?? 1;
     const shadowOpacity = options.shadowOpacity ?? 0.24;
     const bevelStrength = options.bevelStrength ?? 0.28;
+    const offsetY = options.offsetY ?? 0;
+    const drawY = y + offsetY;
+    const depth = Math.max(3, Math.round(size * 0.14));
+    const innerInset = Math.max(2, Math.round(size * 0.1));
+    const corner = Math.max(6, Math.round(size * 0.24));
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    ctx.fillStyle = `rgba(10, 14, 10, ${shadowOpacity})`;
-    roundedRect(ctx, x + 2, y + 4, size - 1, size - 1, 8);
+    ctx.fillStyle = `rgba(10, 14, 10, ${shadowOpacity + 0.04})`;
+    roundedRect(ctx, x + 1, drawY + depth + 3, size - 2, size - 1, corner);
     ctx.fill();
 
+    // Bottom face only (no right shift), to keep the block aligned.
+    roundedRect(ctx, x, drawY + depth, size, size - depth, corner);
+    const sideGrad = ctx.createLinearGradient(x, drawY + depth, x, drawY + size);
+    sideGrad.addColorStop(0, "rgba(0, 0, 0, 0.12)");
+    sideGrad.addColorStop(1, "rgba(0, 0, 0, 0.32)");
+    ctx.fillStyle = sideGrad;
+    ctx.fill();
+
+    // Main top face.
     if (sprite) {
-      ctx.drawImage(sprite, x, y, size, size);
+      ctx.drawImage(sprite, x, drawY, size, size);
     } else {
-      roundedRect(ctx, x, y, size, size, 8);
+      roundedRect(ctx, x, drawY, size, size, corner);
       ctx.fillStyle = baseColor;
       ctx.fill();
     }
 
-    roundedRect(ctx, x, y, size, size, 8);
-    const faceGrad = ctx.createLinearGradient(x, y, x + size, y + size);
-    faceGrad.addColorStop(0, `rgba(255, 255, 255, ${0.18 + bevelStrength * 0.18})`);
-    faceGrad.addColorStop(0.45, "rgba(255, 255, 255, 0.02)");
-    faceGrad.addColorStop(1, `rgba(0, 0, 0, ${0.12 + bevelStrength * 0.2})`);
+    roundedRect(ctx, x, drawY, size, size, corner);
+    const faceGrad = ctx.createLinearGradient(x, drawY, x + size, drawY + size);
+    faceGrad.addColorStop(0, `rgba(255, 255, 255, ${0.24 + bevelStrength * 0.2})`);
+    faceGrad.addColorStop(0.48, "rgba(255, 255, 255, 0.06)");
+    faceGrad.addColorStop(1, `rgba(0, 0, 0, ${0.2 + bevelStrength * 0.22})`);
     ctx.fillStyle = faceGrad;
     ctx.fill();
 
+    // Inner cap for "puffy" 3D tile look like in your reference.
+    roundedRect(
+      ctx,
+      x + innerInset,
+      drawY + innerInset,
+      size - innerInset * 2,
+      size - innerInset * 2,
+      Math.max(4, corner - 3)
+    );
+    const capGrad = ctx.createLinearGradient(x, drawY, x + size, drawY + size);
+    capGrad.addColorStop(0, "rgba(255, 255, 255, 0.22)");
+    capGrad.addColorStop(0.4, "rgba(255, 255, 255, 0.08)");
+    capGrad.addColorStop(1, "rgba(0, 0, 0, 0.18)");
+    ctx.fillStyle = capGrad;
+    ctx.fill();
+
     ctx.lineWidth = 1;
-    roundedRect(ctx, x + 0.5, y + 0.5, size - 1, size - 1, 7.5);
-    ctx.strokeStyle = `rgba(255, 255, 255, ${0.22 + bevelStrength * 0.2})`;
+    roundedRect(ctx, x + 0.5, drawY + 0.5, size - 1, size - 1, corner - 0.5);
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.26 + bevelStrength * 0.2})`;
     ctx.stroke();
-    roundedRect(ctx, x + 1.5, y + 1.5, size - 3, size - 3, 6.5);
-    ctx.strokeStyle = `rgba(0, 0, 0, ${0.22 + bevelStrength * 0.24})`;
+    roundedRect(ctx, x + 1.5, drawY + 1.5, size - 3, size - 3, corner - 1.5);
+    ctx.strokeStyle = `rgba(0, 0, 0, ${0.28 + bevelStrength * 0.24})`;
     ctx.stroke();
 
     ctx.restore();
@@ -1895,13 +2720,14 @@ class Game {
 
   drawDestroyedBlocks(ctx) {
     for (const block of this.blocks) {
-      if (block.alive) {
-        this.drawVolumetricBlock(ctx, block, block.x, block.y, {
-          alpha: 0.96,
-          shadowOpacity: 0.22,
-          bevelStrength: 0.26,
-        });
-      }
+      const isPlaced = block.alive;
+      const waveOffsetY = isPlaced ? this.getBlockWaveOffsetY(block) : 0;
+      this.drawVolumetricBlock(ctx, block, block.x, block.y, {
+        alpha: isPlaced ? 0.96 : 0.24,
+        shadowOpacity: isPlaced ? 0.22 : 0.12,
+        bevelStrength: isPlaced ? 0.26 : 0.14,
+        offsetY: waveOffsetY,
+      });
     }
 
     for (const block of this.blocks) {
@@ -1911,24 +2737,90 @@ class Game {
       ctx.save();
       ctx.globalAlpha = block.hitFlash * 0.25;
       ctx.fillStyle = "#ffffff";
-      roundedRect(ctx, block.x, block.y, block.size, block.size, 8);
+      const waveOffsetY = this.getBlockWaveOffsetY(block);
+      roundedRect(ctx, block.x, block.y + waveOffsetY, block.size, block.size, 8);
       ctx.fill();
       ctx.restore();
     }
+  }
 
+  getBlockWaveOffsetY(block) {
+    if (!block || !block.alive || this.blockWaves.length === 0) {
+      return 0;
+    }
+    const center = this.blockCenter(block);
+    let offset = 0;
+    for (const wave of this.blockWaves) {
+      const t = 1 - wave.life / wave.maxLife;
+      const waveRadius = lerp(wave.startR, wave.endR, easeOutCubic(t));
+      const d = Math.hypot(center.x - wave.x, center.y - wave.y);
+      const influence = 1 - Math.abs(d - waveRadius) / wave.bandWidth;
+      if (influence <= 0) {
+        continue;
+      }
+      offset += -wave.jumpHeight * influence * (1 - t);
+    }
+    return offset;
   }
 
   drawTargetSilhouette(ctx) {
-    for (const block of this.blocks) {
-      if (block.alive) {
-        continue;
-      }
-      this.drawVolumetricBlock(ctx, block, block.x, block.y, {
-        alpha: 0.28,
-        shadowOpacity: 0.14,
-        bevelStrength: 0.12,
-      });
+    const nextBlock = this.getNextSpiralTarget();
+    if (!nextBlock) {
+      return;
     }
+
+    const now = performance.now();
+    const pulseFast = 0.5 + 0.5 * Math.sin(now * 0.018);
+    const pulseSlow = 0.5 + 0.5 * Math.sin(now * 0.009 + 1.3);
+    const accentColor = nextBlock.color === "green" ? "160, 255, 105" : "255, 255, 255";
+
+    ctx.save();
+    ctx.globalAlpha = 0.2 + pulseSlow * 0.24;
+    ctx.shadowColor = `rgba(${accentColor}, 0.95)`;
+    ctx.shadowBlur = 20 + pulseFast * 14;
+    ctx.fillStyle = `rgba(${accentColor}, 0.28)`;
+    roundedRect(
+      ctx,
+      nextBlock.x - 4,
+      nextBlock.y - 4,
+      nextBlock.size + 8,
+      nextBlock.size + 8,
+      11
+    );
+    ctx.fill();
+    ctx.restore();
+
+    this.drawVolumetricBlock(ctx, nextBlock, nextBlock.x, nextBlock.y, {
+      alpha: 0.62,
+      shadowOpacity: 0.28,
+      bevelStrength: 0.24,
+    });
+
+    ctx.save();
+    ctx.globalAlpha = 0.62 + pulseFast * 0.35;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(${accentColor}, 0.98)`;
+    roundedRect(ctx, nextBlock.x + 2, nextBlock.y + 2, nextBlock.size - 4, nextBlock.size - 4, 7);
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.4 + pulseSlow * 0.4;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(20, 40, 70, 0.88)";
+    roundedRect(ctx, nextBlock.x - 2, nextBlock.y - 2, nextBlock.size + 4, nextBlock.size + 4, 9);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawLevelStartFade(ctx) {
+    if (this.levelStartFade <= 0.001) {
+      return;
+    }
+    const t = clamp(this.levelStartFade, 0, 1);
+    const alpha = t * t * 0.78;
+    ctx.save();
+    ctx.fillStyle = `rgba(0, 0, 0, ${alpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.restore();
   }
 
   drawUnitsOnTrack(ctx) {
@@ -1944,16 +2836,17 @@ class Game {
     for (const unit of unitsByDepth) {
       const drawX = unit.position.x;
       const drawY = unit.position.y;
+      const shotScale = unit.getShotScale();
       ctx.save();
       ctx.translate(drawX, drawY);
-      ctx.scale(unit.scaleX || 1, unit.scaleY || 1);
+      ctx.scale(shotScale, shotScale);
       ctx.translate(-drawX, -drawY);
       if (unit.state === "moving") {
-        this.drawPig(ctx, drawX, drawY, SHOOTER_PIG_SIZE, unit.color, 1);
-        this.drawAmmoBadge(ctx, drawX, drawY + 70, unit.ammo, 30, 20);
+        this.drawUnitBlock(ctx, drawX, drawY, UNIT_BLOCK_SIZE, unit.color, 1);
+        this.drawAmmoOnBlock(ctx, drawX, drawY, unit.ammo, 30);
       } else {
-        this.drawPig(ctx, drawX, drawY, SHOOTER_PIG_SIZE, unit.color, 1);
-        this.drawAmmoBadge(ctx, drawX, drawY + 62, unit.ammo, 28, 18);
+        this.drawUnitBlock(ctx, drawX, drawY, UNIT_BLOCK_SIZE, unit.color, 1);
+        this.drawAmmoOnBlock(ctx, drawX, drawY, unit.ammo, 30);
       }
       ctx.restore();
     }
@@ -1978,63 +2871,15 @@ class Game {
     }
   }
 
-  drawPig(ctx, x, y, size, colorName, alpha = 1) {
-    const bodyColor = colorName === "green" ? "#8edf56" : "#3f3f3f";
-    const darkColor = colorName === "green" ? "#4f8c2e" : "#1c1c1c";
-    const metalColor = colorName === "green" ? "#baf18f" : "#bcbcbc";
-    const shineColor = colorName === "green" ? "rgba(255,255,255,0.26)" : "rgba(255,255,255,0.18)";
-    const baseW = size * 0.84;
-    const baseH = size * 0.44;
-    const barrelW = size * 0.26;
-    const barrelH = size * 0.58;
-    const wheelR = size * 0.2;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.26)";
-    ctx.beginPath();
-    ctx.ellipse(x, y + size * 0.42, size * 0.36, size * 0.12, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Wheels
-    ctx.fillStyle = darkColor;
-    ctx.beginPath();
-    ctx.arc(x - baseW * 0.24, y + baseH * 0.42, wheelR, 0, Math.PI * 2);
-    ctx.arc(x + baseW * 0.24, y + baseH * 0.42, wheelR, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = metalColor;
-    ctx.beginPath();
-    ctx.arc(x - baseW * 0.24, y + baseH * 0.42, wheelR * 0.36, 0, Math.PI * 2);
-    ctx.arc(x + baseW * 0.24, y + baseH * 0.42, wheelR * 0.36, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Carriage
-    roundedRect(ctx, x - baseW / 2, y - baseH * 0.2, baseW, baseH, size * 0.12);
-    ctx.fillStyle = darkColor;
-    ctx.fill();
-    roundedRect(ctx, x - baseW / 2, y - baseH * 0.28, baseW, baseH * 0.9, size * 0.12);
-    ctx.fillStyle = bodyColor;
-    ctx.fill();
-
-    // Barrel
-    roundedRect(ctx, x - barrelW / 2, y - barrelH * 0.9, barrelW, barrelH, size * 0.11);
-    const barrelGrad = ctx.createLinearGradient(x - barrelW / 2, y - barrelH * 0.9, x + barrelW / 2, y);
-    barrelGrad.addColorStop(0, metalColor);
-    barrelGrad.addColorStop(1, darkColor);
-    ctx.fillStyle = barrelGrad;
-    ctx.fill();
-    roundedRect(ctx, x - barrelW * 0.34, y - barrelH * 0.98, barrelW * 0.68, barrelH * 0.16, size * 0.08);
-    ctx.fillStyle = darkColor;
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y - barrelH * 0.9 + 2, barrelW * 0.22, 0, Math.PI * 2);
-    ctx.fillStyle = "#0d0d0d";
-    ctx.fill();
-
-    roundedRect(ctx, x - baseW * 0.36, y - baseH * 0.22, baseW * 0.72, baseH * 0.26, size * 0.08);
-    ctx.fillStyle = shineColor;
-    ctx.fill();
-    ctx.restore();
+  drawUnitBlock(ctx, x, y, size, color, alpha = 1) {
+    const drawX = x - size * 0.5;
+    const drawY = y - size * 0.5;
+    const proxyBlock = { color, size };
+    this.drawVolumetricBlock(ctx, proxyBlock, drawX, drawY, {
+      alpha,
+      shadowOpacity: 0.28,
+      bevelStrength: 0.32,
+    });
   }
 
   drawWagonLayer(ctx) {
@@ -2045,23 +2890,24 @@ class Game {
     void ctx;
   }
 
-  drawAmmoBadge(ctx, x, y, value, width, fontSize) {
+  drawAmmoOnBlock(ctx, x, y, value, baseFontSize = 30) {
     ctx.save();
-    roundedRect(ctx, x - width, y - 13, width * 2, 24, 8);
-    ctx.fillStyle = COLORS.badgeBg;
-    ctx.fill();
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
     ctx.fillStyle = COLORS.white;
-    ctx.strokeStyle = COLORS.shadow;
-    ctx.lineWidth = 4;
+    const text = String(value);
+    const digits = text.length;
+    const fontSize = digits >= 4 ? Math.round(baseFontSize * 0.68) : digits === 3 ? Math.round(baseFontSize * 0.82) : baseFontSize;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.82)";
+    ctx.lineWidth = Math.max(4, Math.round(fontSize * 0.22));
     ctx.lineJoin = "round";
+    ctx.lineCap = "round";
     ctx.font = `900 ${fontSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.strokeText(String(value), x, y + 0.5);
-    ctx.fillText(String(value), x, y + 0.5);
+    ctx.strokeText(text, x, y + 1);
+    ctx.fillText(text, x, y + 1);
     ctx.restore();
   }
 
@@ -2072,8 +2918,8 @@ class Game {
         continue;
       }
       const center = this.getCardPigCenter(card);
-      this.drawPig(ctx, center.x, center.y, SHOOTER_PIG_SIZE, card.color, 1);
-      this.drawAmmoBadge(ctx, center.x, card.y + card.h - 16, card.ammo, 38, 32);
+      this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE, card.color, 1);
+      this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30);
     }
   }
 
@@ -2115,74 +2961,74 @@ class Game {
 
   drawProjectiles(ctx) {
     for (const projectile of this.projectiles) {
-      const bulletColor = projectile.color === "green" ? COLORS.bulletGreen : COLORS.bulletBlack;
       const bulletCoreColor = projectile.color === "green" ? COLORS.bulletGreenCore : COLORS.bulletBlackCore;
+      const bulletLightColor = projectile.color === "green" ? COLORS.bulletGreen : "#f2f2f2";
       const fade = projectile.maxLife > 0 ? projectile.life / projectile.maxLife : 0;
       const progress = easeOutCubic(1 - fade);
-      const start = { x: projectile.fromX, y: projectile.fromY };
-      const control = { x: projectile.controlX, y: projectile.controlY };
-      const end = { x: projectile.toX, y: projectile.toY };
-      const head = quadraticBezierPoint(start, control, end, progress);
-      const prev = quadraticBezierPoint(start, control, end, Math.max(0, progress - 0.035));
-      const tangentX = head.x - prev.x;
-      const tangentY = head.y - prev.y;
-      const dist = Math.max(1, Math.hypot(tangentX, tangentY));
-      const dirX = tangentX / dist;
-      const dirY = tangentY / dist;
-      const headX = head.x;
-      const headY = head.y;
-      const tailX = headX - dirX * Math.min(projectile.trailLength, dist * 0.5);
-      const tailY = headY - dirY * Math.min(projectile.trailLength, dist * 0.5);
       const blockSize = LAYOUT.cellSize * 0.78;
       const blockSprite = projectile.color === "green" ? this.sprites.greenTile : this.sprites.blackTile;
+      const dx = projectile.toX - projectile.fromX;
+      const dy = projectile.toY - projectile.fromY;
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const headX = projectile.fromX + dx * progress;
+      const headY = projectile.fromY + dy * progress;
+      const trailLengthPx = Math.min(dist * 0.84, 220);
+      const trailBackProgress = Math.max(0, progress - trailLengthPx / dist);
       ctx.save();
-      for (const point of projectile.trail) {
-        const trailAlpha = point.life * 0.24 * fade;
-        const size = blockSize * (0.34 + point.life * 0.26);
-        ctx.globalAlpha = trailAlpha;
-        if (blockSprite) {
-          ctx.drawImage(blockSprite, point.x - size / 2, point.y - size / 2, size, size);
-        } else {
-          ctx.fillStyle = bulletCoreColor;
-          roundedRect(ctx, point.x - size / 2, point.y - size / 2, size, size, 5);
-          ctx.fill();
-        }
-      }
+      const tailX = projectile.fromX + dx * trailBackProgress;
+      const tailY = projectile.fromY + dy * trailBackProgress;
 
-      ctx.globalAlpha = 0.45 * fade;
-      ctx.strokeStyle = bulletColor;
+      const glow = ctx.createLinearGradient(tailX, tailY, headX, headY);
+      glow.addColorStop(0, "rgba(255,255,255,0)");
+      glow.addColorStop(0.55, projectile.color === "green" ? "rgba(164,255,128,0.22)" : "rgba(255,255,255,0.24)");
+      glow.addColorStop(1, projectile.color === "green" ? "rgba(190,255,160,0.55)" : "rgba(255,255,255,0.62)");
+      ctx.globalAlpha = 0.9 * fade;
+      ctx.strokeStyle = glow;
       ctx.lineCap = "round";
-      ctx.lineWidth = projectile.radius * 1.35;
+      ctx.lineWidth = BULLET_RADIUS * 2.7;
       ctx.beginPath();
       ctx.moveTo(tailX, tailY);
       ctx.lineTo(headX, headY);
       ctx.stroke();
 
-      ctx.globalAlpha = 0.92 * fade;
-      ctx.strokeStyle = bulletCoreColor;
-      ctx.lineWidth = projectile.radius * 0.6;
+      ctx.globalAlpha = 0.95 * fade;
+      ctx.strokeStyle = bulletLightColor;
+      ctx.lineWidth = BULLET_RADIUS * 1.25;
       ctx.beginPath();
-      ctx.moveTo(tailX + dirX * projectile.radius * 0.8, tailY + dirY * projectile.radius * 0.8);
+      ctx.moveTo(tailX, tailY);
       ctx.lineTo(headX, headY);
       ctx.stroke();
 
-      for (let i = projectile.ghostTrailCount; i >= 1; i--) {
-        const ghostT = Math.max(0, progress - i * 0.05);
-        const ghost = quadraticBezierPoint(start, control, end, ghostT);
-        const alpha = (0.22 / i) * fade;
-        const scale = 1 - i * 0.055;
-        const size = blockSize * scale;
-        ctx.globalAlpha = alpha;
+      const trailSamples = 16;
+      for (let i = 0; i < trailSamples; i++) {
+        const t = i / Math.max(1, trailSamples - 1);
+        const segT = lerp(trailBackProgress, progress, t);
+        const px = projectile.fromX + dx * segT;
+        const py = projectile.fromY + dy * segT;
+        const tailToHead = t;
+        const size = blockSize * (0.22 + tailToHead * 0.62);
+        ctx.globalAlpha = (0.05 + tailToHead * 0.48) * fade;
         if (blockSprite) {
-          ctx.drawImage(blockSprite, ghost.x - size / 2, ghost.y - size / 2, size, size);
+          ctx.drawImage(blockSprite, px - size * 0.5, py - size * 0.5, size, size);
         } else {
           ctx.fillStyle = bulletCoreColor;
-          roundedRect(ctx, ghost.x - size / 2, ghost.y - size / 2, size, size, 5);
+          roundedRect(ctx, px - size * 0.5, py - size * 0.5, size, size, 5);
           ctx.fill();
         }
       }
 
-      ctx.globalAlpha = 0.98;
+      const auraR = blockSize * (1.35 + (1 - fade) * 0.42);
+      const aura = ctx.createRadialGradient(headX, headY, 0, headX, headY, auraR);
+      aura.addColorStop(0, projectile.color === "green" ? "rgba(212,255,184,0.75)" : "rgba(255,255,255,0.78)");
+      aura.addColorStop(0.4, projectile.color === "green" ? "rgba(160,244,105,0.34)" : "rgba(245,245,245,0.30)");
+      aura.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.globalAlpha = 0.95 * fade;
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(headX, headY, auraR, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 0.96 * fade;
       ctx.fillStyle = COLORS.blockShadow;
       roundedRect(ctx, headX - blockSize / 2 + 2, headY - blockSize / 2 + 3, blockSize, blockSize, 6);
       ctx.fill();
@@ -2267,10 +3113,421 @@ class Game {
     }
   }
 
+  drawBackButton(ctx) {
+    if (!this.backButtonImage.complete || this.backButtonImage.naturalWidth === 0) {
+      return;
+    }
+
+    const { x, y, w, h } = this.backButtonRect;
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+    ctx.shadowBlur = 14;
+    ctx.shadowOffsetY = 4;
+    ctx.drawImage(this.backButtonImage, x, y, w, h);
+    ctx.restore();
+  }
+
+  drawTopTimerPanel(ctx) {
+    if (!this.timerPanelImage.complete || this.timerPanelImage.naturalWidth === 0) {
+      return;
+    }
+
+    const panelW = TIMER_PANEL_UI.w;
+    const panelH = TIMER_PANEL_UI.h;
+    const panelX = (this.width - panelW) * 0.5;
+    const panelY = TIMER_PANEL_UI.y;
+    const textX = panelX + panelW * 0.5;
+    const textY = panelY + panelH * 0.5 + 4;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    ctx.shadowColor = "rgba(0, 0, 0, 0.24)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    ctx.drawImage(this.timerPanelImage, panelX, panelY, panelW, panelH);
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = getTopPanelFont();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = TIMER_PANEL_UI.textStroke;
+    ctx.fillStyle = TIMER_PANEL_UI.textColor;
+    ctx.strokeText(TIMER_PANEL_UI.label, textX, textY);
+    ctx.fillText(TIMER_PANEL_UI.label, textX, textY);
+    ctx.restore();
+  }
+
+  drawTopCoinsPanel(ctx) {
+    if (!this.restartButtonImage.complete || this.restartButtonImage.naturalWidth === 0) {
+      return;
+    }
+
+    const panel = this.getRestartButtonRect();
+    this.restartButtonRect = panel;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    ctx.drawImage(this.restartButtonImage, panel.x, panel.y, panel.w, panel.h);
+    ctx.restore();
+  }
+
+  getRestartButtonRect() {
+    const panelW = this.backButtonRect.w;
+    const panelH = this.backButtonRect.h;
+    const panelCenterX = this.width - COINS_UI.rightMargin - panelW * 0.5;
+    const panelCenterY = this.backButtonRect.y + panelH * 0.5;
+    return {
+      x: panelCenterX - panelW * 0.5,
+      y: panelCenterY - panelH * 0.5,
+      w: panelW,
+      h: panelH,
+    };
+  }
+
+  getLosePopupRect() {
+    const w = LOSE_POPUP_UI.w;
+    const h = LOSE_POPUP_UI.h;
+    return {
+      x: (this.width - w) * 0.5,
+      y: LOSE_POPUP_UI.y,
+      w,
+      h,
+    };
+  }
+
+  getLoseCloseRect(popupRect = null) {
+    const popup = popupRect || this.getLosePopupRect();
+    return {
+      x: popup.x + popup.w * 0.84,
+      y: popup.y + popup.h * 0.02,
+      w: popup.w * 0.13,
+      h: popup.h * 0.13,
+    };
+  }
+
+  drawLoseClock(ctx, centerX, centerY, radius) {
+    ctx.save();
+    ctx.shadowColor = "rgba(18, 46, 120, 0.28)";
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetY = 5;
+    const ringGrad = ctx.createLinearGradient(centerX, centerY - radius, centerX, centerY + radius);
+    ringGrad.addColorStop(0, "#3ac6ff");
+    ringGrad.addColorStop(1, "#1f60e8");
+    ctx.fillStyle = ringGrad;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#6ecdf8";
+    ctx.beginPath();
+    ctx.arc(centerX - radius * 0.7, centerY - radius * 0.66, radius * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#f9b11b";
+    ctx.strokeStyle = "#eb7f19";
+    ctx.lineWidth = 2;
+    roundedRect(ctx, centerX - radius * 0.92, centerY - radius * 1.07, radius * 0.36, radius * 0.2, radius * 0.1);
+    ctx.fill();
+    ctx.stroke();
+    roundedRect(ctx, centerX + radius * 0.56, centerY - radius * 1.07, radius * 0.36, radius * 0.2, radius * 0.1);
+    ctx.fill();
+    ctx.stroke();
+    roundedRect(ctx, centerX - radius * 0.24, centerY - radius * 1.36, radius * 0.48, radius * 0.2, radius * 0.1);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#e9f4ff";
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius * 0.79, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(17, 68, 170, 0.33)";
+    ctx.lineWidth = radius * 0.06;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#003895";
+    ctx.font = "900 58px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = "rgba(255,255,255,0.76)";
+    ctx.lineWidth = 5;
+    ctx.strokeText("+60s", centerX, centerY + 2);
+    ctx.fillText("+60s", centerX, centerY + 2);
+    ctx.restore();
+  }
+
+  drawLoseButtons(ctx, popupX, popupY, popupW, popupH) {
+    const buttonY = popupY + popupH - 126;
+    const leftX = popupX + 40;
+    const leftW = 184;
+    const leftH = 68;
+    const rightW = 184;
+    const rightH = 68;
+    const rightX = popupX + popupW - rightW - 40;
+
+    ctx.save();
+    ctx.shadowColor = "rgba(20, 38, 87, 0.24)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const leftGrad = ctx.createLinearGradient(0, buttonY, 0, buttonY + leftH);
+    leftGrad.addColorStop(0, "#9ce53f");
+    leftGrad.addColorStop(1, "#53ca1c");
+    roundedRect(ctx, leftX, buttonY, leftW, leftH, 24);
+    ctx.fillStyle = leftGrad;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.34)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    const coinX = leftX + 22;
+    const coinY = buttonY + 12;
+    const coinR = 22;
+    ctx.save();
+    const coinGrad = ctx.createLinearGradient(coinX, coinY, coinX, coinY + coinR * 2);
+    coinGrad.addColorStop(0, "#ffea55");
+    coinGrad.addColorStop(1, "#f0980f");
+    ctx.fillStyle = coinGrad;
+    ctx.beginPath();
+    ctx.arc(coinX + coinR, coinY + coinR, coinR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#ffbe2b";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#ffef65";
+    ctx.beginPath();
+    ctx.arc(coinX + coinR, coinY + coinR, coinR * 0.66, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#f0a300";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#ffc700";
+    ctx.strokeStyle = "#ed8f00";
+    ctx.lineWidth = 1.5;
+    const sx = coinX + coinR;
+    const sy = coinY + coinR;
+    const rOuter = coinR * 0.42;
+    const rInner = coinR * 0.2;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * i) / 10;
+      const r = i % 2 === 0 ? rOuter : rInner;
+      const px = sx + Math.cos(angle) * r;
+      const py = sy + Math.sin(angle) * r;
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.font = "900 56px Arial";
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "rgba(0, 74, 10, 0.42)";
+    ctx.lineWidth = 5;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.strokeText("50", leftX + 92, buttonY + leftH * 0.53);
+    ctx.fillText("50", leftX + 92, buttonY + leftH * 0.53);
+    ctx.restore();
+
+    ctx.save();
+    ctx.shadowColor = "rgba(20, 38, 87, 0.24)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
+    const rightGrad = ctx.createLinearGradient(0, buttonY, 0, buttonY + rightH);
+    rightGrad.addColorStop(0, "#7bcfff");
+    rightGrad.addColorStop(1, "#4a95ef");
+    roundedRect(ctx, rightX, buttonY, rightW, rightH, 24);
+    ctx.fillStyle = rightGrad;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.38)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+
+    const filmX = rightX + 20;
+    const filmY = buttonY + 12;
+    const filmW = 52;
+    const filmH = 44;
+    ctx.save();
+    const filmGrad = ctx.createLinearGradient(filmX, filmY, filmX, filmY + filmH);
+    filmGrad.addColorStop(0, "#d7f0ff");
+    filmGrad.addColorStop(1, "#75b6ff");
+    roundedRect(ctx, filmX, filmY, filmW, filmH, 12);
+    ctx.fillStyle = filmGrad;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(31, 95, 184, 0.8)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#4f8fe0";
+    ctx.beginPath();
+    ctx.moveTo(filmX + 21, filmY + 12);
+    ctx.lineTo(filmX + 21, filmY + 32);
+    ctx.lineTo(filmX + 38, filmY + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 54px Arial";
+    ctx.strokeStyle = "rgba(15, 63, 143, 0.72)";
+    ctx.lineWidth = 5;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.strokeText("FREE", rightX + 84, buttonY + rightH * 0.53);
+    ctx.fillText("FREE", rightX + 84, buttonY + rightH * 0.53);
+    ctx.restore();
+  }
+
+  drawLosePopup(ctx) {
+    const popup = this.getLosePopupRect();
+    const animT = clamp(this.losePopupAppear, 0, 1);
+    const fade = easeOutCubic(animT);
+    const scale = 0.86 + 0.14 * easeOutBack(animT);
+    const lift = (1 - fade) * 26;
+    const centerX = popup.x + popup.w * 0.5;
+    const centerY = popup.y + popup.h * 0.5 + lift;
+    const drawRect = {
+      x: centerX - (popup.w * scale) * 0.5,
+      y: centerY - (popup.h * scale) * 0.5,
+      w: popup.w * scale,
+      h: popup.h * scale,
+    };
+    this.loseCloseRect = this.getLoseCloseRect(drawRect);
+
+    ctx.save();
+    ctx.fillStyle = `rgba(7, 14, 28, ${0.52 * fade})`;
+    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = 0.42 * fade;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+    ctx.shadowBlur = 34;
+    ctx.shadowOffsetY = 12;
+    roundedRect(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, Math.max(20, drawRect.w * 0.05));
+    ctx.fillStyle = "rgba(255, 255, 255, 0.02)";
+    ctx.fill();
+    ctx.restore();
+
+    if (this.losePopupImage.complete && this.losePopupImage.naturalWidth > 0) {
+      const cropInset = 6;
+      const sx = cropInset;
+      const sy = cropInset;
+      const sw = Math.max(1, this.losePopupImage.naturalWidth - cropInset * 2);
+      const sh = Math.max(1, this.losePopupImage.naturalHeight - cropInset * 2);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      roundedRect(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, Math.max(20, drawRect.w * 0.05));
+      ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      if ("imageSmoothingQuality" in ctx) {
+        ctx.imageSmoothingQuality = "high";
+      }
+      ctx.drawImage(this.losePopupImage, sx, sy, sw, sh, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.shadowColor = "rgba(19, 52, 110, 0.3)";
+    ctx.shadowBlur = 26;
+    ctx.shadowOffsetY = 10;
+    roundedRect(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, LOSE_POPUP_UI.outerRadius);
+    ctx.fillStyle = "#eef0f5";
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    roundedRect(ctx, drawRect.x + 3, drawRect.y + 3, drawRect.w - 6, drawRect.h - 6, LOSE_POPUP_UI.outerRadius - 2);
+    ctx.strokeStyle = "#7ea4e5";
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.restore();
+
+    const innerX = drawRect.x + LOSE_POPUP_UI.innerPadding;
+    const innerY = drawRect.y + 136;
+    const innerW = drawRect.w - LOSE_POPUP_UI.innerPadding * 2;
+    const innerH = drawRect.h - 160;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    roundedRect(ctx, innerX, innerY, innerW, innerH, 22);
+    ctx.fillStyle = "#c7d0e3";
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#474a7a";
+    ctx.font = "900 62px Arial";
+    ctx.fillText("OUT OF TIME!", drawRect.x + drawRect.w * 0.5, drawRect.y + 62);
+    ctx.font = "700 47px Arial";
+    ctx.fillStyle = "#2dac28";
+    ctx.fillText("Revive", drawRect.x + drawRect.w * 0.36, drawRect.y + 111);
+    ctx.fillStyle = "#474a7a";
+    ctx.fillText("to keep playing", drawRect.x + drawRect.w * 0.6, drawRect.y + 111);
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = "#8ca3d1";
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
+    const close = this.loseCloseRect;
+    ctx.beginPath();
+    ctx.moveTo(close.x + 12, close.y + 12);
+    ctx.lineTo(close.x + close.w - 12, close.y + close.h - 12);
+    ctx.moveTo(close.x + close.w - 12, close.y + 12);
+    ctx.lineTo(close.x + 12, close.y + close.h - 12);
+    ctx.stroke();
+    ctx.restore();
+
+    this.drawLoseClock(ctx, drawRect.x + drawRect.w * 0.5, drawRect.y + 255, 80);
+    this.drawLoseButtons(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+  }
+
   render() {
     const ctx = this.ctx;
     if (this.gameState === "loading") {
       this.drawLoading(ctx);
+      this.drawTopTimerPanel(ctx);
+      this.drawTopCoinsPanel(ctx);
+      this.drawBackButton(ctx);
       return;
     }
 
@@ -2285,6 +3542,10 @@ class Game {
       this.drawVictoryArtwork(ctx);
       ctx.restore();
       this.drawConfetti(ctx);
+      this.drawTopTimerPanel(ctx);
+      this.drawTopCoinsPanel(ctx);
+      this.drawBackButton(ctx);
+      this.drawLevelStartFade(ctx);
       this.needsRender = false;
       return;
     }
@@ -2295,10 +3556,10 @@ class Game {
     ctx.scale(this.cameraZoom, this.cameraZoom);
     ctx.translate(-fieldCenter.x, -fieldCenter.y);
     this.drawBackground(ctx);
-    this.drawTargetSilhouette(ctx);
     this.drawWagonLayer(ctx);
     this.drawBottomCleanup(ctx);
     this.drawDestroyedBlocks(ctx);
+    this.drawTargetSilhouette(ctx);
     this.drawSlotState(ctx);
     this.drawProjectiles(ctx);
     this.drawImpactFx(ctx);
@@ -2309,6 +3570,13 @@ class Game {
     this.drawTapDebug(ctx);
     ctx.restore();
     this.drawConfetti(ctx);
+    this.drawTopTimerPanel(ctx);
+    this.drawTopCoinsPanel(ctx);
+    this.drawBackButton(ctx);
+    this.drawLevelStartFade(ctx);
+    if (this.gameState === "lose") {
+      this.drawLosePopup(ctx);
+    }
     this.needsRender = false;
   }
 
@@ -2337,6 +3605,9 @@ class Game {
   }
 
   hasActiveAnimations() {
+    if (this.gameState === "lose") {
+      return this.losePopupAppear < 0.999 || this.levelStartFade > 0.001;
+    }
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
     const zoomAnimating = Math.abs(this.cameraZoomTarget - this.cameraZoom) > 0.001;
     if (
@@ -2344,10 +3615,12 @@ class Game {
       this.projectiles.length > 0 ||
       this.particles.length > 0 ||
       this.impactRings.length > 0 ||
+      this.blockWaves.length > 0 ||
       this.slotBursts.length > 0 ||
       this.floatTexts.length > 0 ||
       this.confetti.length > 0 ||
       this.victoryConfettiTime > 0 ||
+      this.levelStartFade > 0.001 ||
       zoomAnimating
     ) {
       return true;
@@ -2383,11 +3656,29 @@ class Game {
   }
 
   handlePointerMove(x, y) {
-    void x;
-    void y;
+    if (this.gameState === "lose") {
+      this.canvas.style.cursor = isInsideRect(x, y, this.loseCloseRect) ? "pointer" : "default";
+      return;
+    }
+    const overBack = isInsideRect(x, y, this.backButtonRect);
+    const overRestart = isInsideRect(x, y, this.restartButtonRect);
+    this.canvas.style.cursor = overBack || overRestart ? "pointer" : "default";
   }
 
   handlePointerDown(x, y) {
+    if (this.gameState === "lose") {
+      if (isInsideRect(x, y, this.loseCloseRect)) {
+        this.restart();
+      }
+      return;
+    }
+    if (isInsideRect(x, y, this.backButtonRect)) {
+      return;
+    }
+    if (isInsideRect(x, y, this.restartButtonRect)) {
+      this.restart();
+      return;
+    }
     if (this.gameState !== "playing") {
       return;
     }
@@ -2408,8 +3699,294 @@ class Game {
     };
   }
 
+  initDebugControls() {
+    if (this.debugPanel) {
+      this.debugPanel.classList.remove("is-visible");
+    }
+    const bindRange = (input, output, currentValue, parseValue, formatValue, onApply) => {
+      if (!input) {
+        return;
+      }
+      input.value = formatValue(currentValue);
+      input.addEventListener("input", () => {
+        const parsed = parseValue(input.value);
+        const nextValue = onApply(parsed);
+        if (output) {
+          const text = formatValue(nextValue);
+          output.value = text;
+          output.textContent = text;
+        }
+        this.saveDebugSettings();
+      });
+      input.dispatchEvent(new Event("input"));
+    };
+
+    if (this.shotBounceSizeInput) {
+      this.shotBounceSizeInput.value = SHOT_BOUNCE_AMOUNT.toFixed(2);
+      this.shotBounceSizeInput.addEventListener("input", () => {
+        const value = Number(this.shotBounceSizeInput.value);
+        SHOT_BOUNCE_AMOUNT = clamp(value, 0.05, 0.7);
+        if (this.shotBounceSizeValue) {
+          this.shotBounceSizeValue.value = SHOT_BOUNCE_AMOUNT.toFixed(2);
+          this.shotBounceSizeValue.textContent = SHOT_BOUNCE_AMOUNT.toFixed(2);
+        }
+        this.saveDebugSettings();
+      });
+      this.shotBounceSizeInput.dispatchEvent(new Event("input"));
+    }
+    if (this.shotBounceSpeedInput) {
+      this.shotBounceSpeedInput.value = SHOT_BOUNCE_SPEED.toFixed(2);
+      this.shotBounceSpeedInput.addEventListener("input", () => {
+        const value = Number(this.shotBounceSpeedInput.value);
+        SHOT_BOUNCE_SPEED = clamp(value, 0.4, 2.6);
+        if (this.shotBounceSpeedValue) {
+          const text = `${SHOT_BOUNCE_SPEED.toFixed(2)}x`;
+          this.shotBounceSpeedValue.value = text;
+          this.shotBounceSpeedValue.textContent = text;
+        }
+        this.saveDebugSettings();
+      });
+      this.shotBounceSpeedInput.dispatchEvent(new Event("input"));
+    }
+    if (this.railSpeedInput) {
+      this.railSpeedInput.value = String(Math.round(TRACK_UNIT_SPEED));
+      this.railSpeedInput.addEventListener("input", () => {
+        const value = Number(this.railSpeedInput.value);
+        TRACK_UNIT_SPEED = clamp(value, 420, 1400);
+        if (this.railSpeedValue) {
+          const text = String(Math.round(TRACK_UNIT_SPEED));
+          this.railSpeedValue.value = text;
+          this.railSpeedValue.textContent = text;
+        }
+        this.saveDebugSettings();
+      });
+      this.railSpeedInput.dispatchEvent(new Event("input"));
+    }
+    if (this.queueCardsInput) {
+      this.queueCardsInput.value = String(BOTTOM_QUEUE_CARD_COUNT);
+      this.queueCardsInput.addEventListener("input", () => {
+        const value = clamp(Math.round(Number(this.queueCardsInput.value)), MIN_QUEUE_CARDS, MAX_QUEUE_CARDS);
+        if (String(value) !== this.queueCardsInput.value) {
+          this.queueCardsInput.value = String(value);
+        }
+        if (this.queueCardsValue) {
+          const text = String(value);
+          this.queueCardsValue.value = text;
+          this.queueCardsValue.textContent = text;
+        }
+        this.setQueueCardCount(value);
+        this.saveDebugSettings();
+      });
+      this.queueCardsInput.dispatchEvent(new Event("input"));
+    }
+
+    bindRange(
+      this.topPanelFontSizeInput,
+      this.topPanelFontSizeValue,
+      TOP_PANEL_FONT_SIZE,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TOP_PANEL_FONT_SIZE = clamp(value, 24, 80);
+        this.invalidate(false);
+        return TOP_PANEL_FONT_SIZE;
+      }
+    );
+
+    bindRange(
+      this.levelPanelScaleInput,
+      this.levelPanelScaleValue,
+      TOP_LEVEL_PANEL_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        TOP_LEVEL_PANEL_SCALE = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return TOP_LEVEL_PANEL_SCALE;
+      }
+    );
+    bindRange(
+      this.coinsPanelScaleInput,
+      this.coinsPanelScaleValue,
+      TOP_COINS_PANEL_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        TOP_COINS_PANEL_SCALE = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return TOP_COINS_PANEL_SCALE;
+      }
+    );
+    bindRange(
+      this.backButtonScaleInput,
+      this.backButtonScaleValue,
+      BACK_BUTTON_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        BACK_BUTTON_SCALE = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return BACK_BUTTON_SCALE;
+      }
+    );
+    bindRange(
+      this.trackYOffsetInput,
+      this.trackYOffsetValue,
+      TRACK_Y_OFFSET,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TRACK_Y_OFFSET = clamp(value, -220, 260);
+        this.applyDebugLayout();
+        return TRACK_Y_OFFSET;
+      }
+    );
+    bindRange(
+      this.fieldScaleInput,
+      this.fieldScaleValue,
+      FIELD_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        FIELD_SCALE = clamp(value, 0.65, 1.5);
+        this.applyDebugLayout();
+        return FIELD_SCALE;
+      }
+    );
+    bindRange(
+      this.playfieldScaleInput,
+      this.playfieldScaleValue,
+      PLAYFIELD_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        PLAYFIELD_SCALE = clamp(value, 0.7, 1.5);
+        this.applyDebugLayout();
+        return PLAYFIELD_SCALE;
+      }
+    );
+    bindRange(
+      this.slotSizeScaleInput,
+      this.slotSizeScaleValue,
+      SLOT_SIZE_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        SLOT_SIZE_SCALE = clamp(value, 0.6, 1.7);
+        this.applyDebugLayout();
+        return SLOT_SIZE_SCALE;
+      }
+    );
+    bindRange(
+      this.slotYOffsetInput,
+      this.slotYOffsetValue,
+      SLOT_Y_OFFSET,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        SLOT_Y_OFFSET = clamp(value, -220, 260);
+        this.applyDebugLayout();
+        return SLOT_Y_OFFSET;
+      }
+    );
+    bindRange(
+      this.topUiYOffsetInput,
+      this.topUiYOffsetValue,
+      TOP_UI_Y_OFFSET,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TOP_UI_Y_OFFSET = clamp(value, -60, 220);
+        this.applyDebugLayout();
+        return TOP_UI_Y_OFFSET;
+      }
+    );
+    bindRange(
+      this.cardAllYOffsetInput,
+      this.cardAllYOffsetValue,
+      CARD_Y_OFFSET_ALL,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        CARD_Y_OFFSET_ALL = clamp(value, -260, 260);
+        this.applyDebugLayout();
+        return CARD_Y_OFFSET_ALL;
+      }
+    );
+    bindRange(
+      this.card1YOffsetInput,
+      this.card1YOffsetValue,
+      CARD_Y_OFFSET_1,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        CARD_Y_OFFSET_1 = clamp(value, -260, 260);
+        this.applyDebugLayout();
+        return CARD_Y_OFFSET_1;
+      }
+    );
+    bindRange(
+      this.card2YOffsetInput,
+      this.card2YOffsetValue,
+      CARD_Y_OFFSET_2,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        CARD_Y_OFFSET_2 = clamp(value, -260, 260);
+        this.applyDebugLayout();
+        return CARD_Y_OFFSET_2;
+      }
+    );
+    bindRange(
+      this.card3YOffsetInput,
+      this.card3YOffsetValue,
+      CARD_Y_OFFSET_3,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        CARD_Y_OFFSET_3 = clamp(value, -260, 260);
+        this.applyDebugLayout();
+        return CARD_Y_OFFSET_3;
+      }
+    );
+    bindRange(
+      this.card4YOffsetInput,
+      this.card4YOffsetValue,
+      CARD_Y_OFFSET_4,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        CARD_Y_OFFSET_4 = clamp(value, -260, 260);
+        this.applyDebugLayout();
+        return CARD_Y_OFFSET_4;
+      }
+    );
+  }
+
+  setDebugPanelVisible(visible) {
+    this.debugPanelVisible = visible;
+    if (this.debugPanel) {
+      this.debugPanel.classList.toggle("is-visible", visible);
+    }
+  }
+
+  toggleDebugPanel() {
+    this.setDebugPanelVisible(!this.debugPanelVisible);
+  }
+
   bindEvents() {
     window.addEventListener("resize", () => this.resize());
+    window.addEventListener("keydown", (event) => {
+      if (event.code !== "Space" || event.repeat) {
+        return;
+      }
+      const tag = event.target && event.target.tagName ? String(event.target.tagName).toLowerCase() : "";
+      if (tag === "input" || tag === "textarea") {
+        return;
+      }
+      this.toggleDebugPanel();
+      event.preventDefault();
+    });
     this.canvas.addEventListener("pointermove", (event) => {
       const point = this.getPointerPosition(event);
       this.handlePointerMove(point.x, point.y);
@@ -2422,6 +3999,12 @@ class Game {
     if (this.debugButton) {
       this.debugButton.addEventListener("click", (event) => {
         this.triggerDebug6();
+        event.preventDefault();
+      });
+    }
+    if (this.debugResetButton) {
+      this.debugResetButton.addEventListener("click", (event) => {
+        this.resetDebugSettings();
         event.preventDefault();
       });
     }
@@ -2441,6 +4024,7 @@ class Game {
       mode: this.gameState,
       scene: "reference_reskin",
       source: "Ref.png",
+      unitTheme: "numbered_slimes",
       coordinateSystem: {
         origin: "top-left",
         xDirection: "right",
@@ -2449,6 +4033,7 @@ class Game {
       },
       remainingBlocks: this.remainingBlocks,
       blocksTotal: this.blocks.length,
+      queueCards: this.cardManager.queueCardCount,
       blocksByColor: {
         green: this.blocks.filter((block) => !block.alive && block.color === "green").length,
         black: this.blocks.filter((block) => !block.alive && block.color === "black").length,
@@ -2456,16 +4041,20 @@ class Game {
       units: this.units.map((unit) => ({
         id: unit.id,
         color: unit.color,
+        styleKey: unit.styleKey,
+        label: unit.label,
         ammo: unit.ammo,
         slotIndex: unit.slotIndex,
         x: Number(unit.position.x.toFixed(1)),
         y: Number(unit.position.y.toFixed(1)),
       })),
-      shooterCards: this.cards.map((card) => ({
+      slimeCards: this.cards.map((card) => ({
         index: card.index,
         lane: card.lane,
         row: card.row,
         color: card.color,
+        styleKey: card.styleKey,
+        label: card.label,
         ammo: card.ammo,
         used: card.used,
         x: card.x,

@@ -94,3 +94,6 @@ Original prompt: Твоя задача: создать полностью раб
 TODO next:
 - При необходимости вернуть более агрессивный мульти-спавн (если нужен именно старый темп), но с временным stagger при `launching`, чтобы сохранить отсутствие наложений.
 - При желании вынести `CardManager/SlotManager` в отдельные модули (`src/`) для полного модульного layout перед добавлением новых уровней.
+
+- 2026-03-30: guns visually replaced with numbered slimes (4 palettes + per-card labels), preserving rail travel and block-shot mechanics; text state now exposes `unitTheme`, `styleKey`, `label`, and `slimeCards`.
+- 2026-03-30: verification after slime reskin: `web_game_playwright_client.js` confirmed the first numbered slime renders and rides the rails (`output/web-game/verify-numbered-slimes-client`). Direct Playwright with staggered spawn confirmed block shooting/building still works: `remainingBlocks 324 -> 318`, two slimes parked after a lap, artifacts in `output/web-game/verify-numbered-slimes-dual-stagger`.
