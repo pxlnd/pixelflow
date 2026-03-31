@@ -19,6 +19,18 @@
       </div>
 
       <div class="debug-section">
+        <div class="debug-section-title">Контент</div>
+        <label class="debug-select" for="debugLevelSelect">
+          <span>Уровень</span>
+          <select id="debugLevelSelect" aria-label="Выбор уровня"></select>
+        </label>
+        <label class="debug-select" for="debugThemeSelect">
+          <span>Тема</span>
+          <select id="debugThemeSelect" aria-label="Выбор темы"></select>
+        </label>
+      </div>
+
+      <div class="debug-section">
         <div class="debug-section-title">Геймплей</div>
         <label class="debug-control" for="shotBounceSize">
           <span>Отдача: сила</span>
@@ -129,8 +141,15 @@
         </label>
       </div>
     </aside>
+    <button id="debugToggleFab" class="debug-fab" type="button" aria-label="Открыть отладку">DBG</button>
     <canvas id="gameCanvas" aria-label="PixelFlow mini puzzle game"></canvas>
   </main>
-  <script src="main.js"></script>
+  <script src="game-data/levels/level-1.js?v=20260331-2"></script>
+  <script src="game-data/levels/level-2.js?v=20260331-2"></script>
+  <script src="game-data/levels/index.js?v=20260331-2"></script>
+  <script src="game-data/themes/theme-classic.js?v=20260331-2"></script>
+  <script src="game-data/themes/theme-sunset.js?v=20260331-2"></script>
+  <script src="game-data/themes/index.js?v=20260331-2"></script>
+  <script src="main.js?v=20260331-2"></script>
 </body>
 </html>

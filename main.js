@@ -1,3 +1,157 @@
+const LEVEL_REGISTRY = window.PIXELFLOW_LEVELS || {
+  LEVEL_DEFINITIONS: [],
+  DEFAULT_LEVEL_ID: "level-1",
+  getLevelConfig: () => null,
+};
+const THEME_REGISTRY = window.PIXELFLOW_THEMES || {
+  THEME_DEFINITIONS: [],
+  DEFAULT_THEME_ID: "classic",
+  getThemeConfig: () => null,
+};
+
+const BUILTIN_FALLBACK_LEVEL = {
+  id: "level-1",
+  name: "Level 1",
+  fallbackFieldPattern: [
+    "GGGGGGGGGGGGGGGGGG",
+    "GGGGGGGGGGGGGGGGGG",
+    "GGGGGGGGGGGGGGGGGG",
+    "GGGGGGGGGGGGGGGGGG",
+    "GGBBBBGGGGGGBBBBGG",
+    "GGBBBBGGGGGGBBBBGG",
+    "GGBBBBGGGGGGBBBBGG",
+    "GGBBBBGGGGGGBBBBGG",
+    "GGGGGGBBBBBBGGGGGG",
+    "GGGGGGBBBBBBGGGGGG",
+    "GGGGBBBBBBBBBBGGGG",
+    "GGGGBBBBBBBBBBGGGG",
+    "GGGGBBBBBBBBBBGGGG",
+    "GGGGBBBBBBBBBBGGGG",
+    "GGGGBBGGGGGGBBGGGG",
+    "GGGGBBGGGGGGBBGGGG",
+    "GGGGGGGGGGGGGGGGGG",
+    "GGGGGGGGGGGGGGGGGG",
+  ],
+  referenceGrid: { x: 220, y: 216, step: 32, cellSize: 30 },
+  layout: {
+    fieldX: 220,
+    fieldY: 329,
+    fieldStep: 32,
+    cellSize: 32,
+    fieldCols: 18,
+    fieldRows: 18,
+    track: { x: 106, y: 189, w: 808, h: 856, r: 50 },
+    spawnPoint: { x: 152, y: 979 },
+    cards: [
+      { lane: 0, row: 0, x: 312, y: 1230, w: 160, h: 200, color: "green", styleKey: "mint", label: 1, ammo: 40 },
+      { lane: 1, row: 0, x: 552, y: 1230, w: 160, h: 200, color: "black", styleKey: "coral", label: 2, ammo: 40 },
+      { lane: 0, row: 1, x: 312, y: 1432, w: 160, h: 200, color: "green", styleKey: "sky", label: 3, ammo: 40 },
+      { lane: 1, row: 1, x: 552, y: 1432, w: 160, h: 200, color: "black", styleKey: "gold", label: 4, ammo: 40 },
+    ],
+    slots: [
+      { x: 98, y: 1130, w: 194, h: 126 },
+      { x: 311, y: 1130, w: 194, h: 126 },
+      { x: 520, y: 1130, w: 194, h: 126 },
+      { x: 729, y: 1130, w: 194, h: 126 },
+    ],
+    wagonSprite: {
+      x: 44,
+      y: 840,
+      w: 148,
+      h: 116,
+      anchorX: 52,
+      anchorY: 96,
+      seatOffsetX: 0,
+      seatOffsetY: -52,
+    },
+    wagonMask: { x: 0, y: 820, w: 260, h: 200 },
+    boardMask: { x: 0, y: 0, w: 1024, h: 1600, r: 0 },
+  },
+};
+
+const BUILTIN_FALLBACK_THEME = {
+  id: "classic",
+  name: "Classic",
+  assets: {
+    referenceImage: "Ref.png",
+    backButton: "ui/back_button.png",
+    timerPanel: "ui/timer_panel.png",
+    restartButton: "ui/restart_button.png",
+    losePopup: "ui/lose_popup_ref.png",
+  },
+  board: {
+    fill: "#6aa93a",
+    grassPalette: ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"],
+    grassShade: "rgba(28, 52, 14, 0.16)",
+    dirtFill: "#b98c5e",
+    dirtPalette: ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
+    dirtShade: "rgba(64, 40, 22, 0.2)",
+  },
+  track: {
+    woodGradient: ["#9f6e34", "#6f451f", "#a47539"],
+    sleeperColor: "#5b3619",
+    sleeperHighlight: "rgba(255,255,255,0.12)",
+    railMain: "#ded7ca",
+    railShadow: "rgba(55,55,55,0.35)",
+  },
+  victory: {
+    gradient: ["#d8f3ff", "#a8ddff", "#8bc9ff"],
+    cloudColor: "rgba(255, 255, 255, 0.7)",
+    boardGlow: "rgba(255, 255, 255, 0.42)",
+  },
+  colors: {},
+  confettiColors: ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"],
+};
+
+const LEVEL_DEFINITIONS = Array.isArray(LEVEL_REGISTRY.LEVEL_DEFINITIONS) ? LEVEL_REGISTRY.LEVEL_DEFINITIONS : [];
+const THEME_DEFINITIONS = Array.isArray(THEME_REGISTRY.THEME_DEFINITIONS) ? THEME_REGISTRY.THEME_DEFINITIONS : [];
+const DEFAULT_LEVEL_ID = String(LEVEL_REGISTRY.DEFAULT_LEVEL_ID || BUILTIN_FALLBACK_LEVEL.id);
+const DEFAULT_THEME_ID = String(THEME_REGISTRY.DEFAULT_THEME_ID || BUILTIN_FALLBACK_THEME.id);
+const getLevelConfigRaw = typeof LEVEL_REGISTRY.getLevelConfig === "function" ? LEVEL_REGISTRY.getLevelConfig : () => null;
+const getThemeConfigRaw = typeof THEME_REGISTRY.getThemeConfig === "function" ? THEME_REGISTRY.getThemeConfig : () => null;
+
+function isValidLevelConfig(config) {
+  return !!config && !!config.layout && Array.isArray(config.layout.cards) && Array.isArray(config.layout.slots);
+}
+
+function isValidThemeConfig(config) {
+  return !!config && typeof config === "object";
+}
+
+const getLevelConfig = (levelId) => {
+  let config = null;
+  try {
+    config = getLevelConfigRaw(levelId);
+  } catch {
+    config = null;
+  }
+  if (isValidLevelConfig(config)) {
+    return config;
+  }
+  const fallbackById = LEVEL_DEFINITIONS.find((level) => level && level.id === DEFAULT_LEVEL_ID);
+  if (isValidLevelConfig(fallbackById)) {
+    return fallbackById;
+  }
+  return BUILTIN_FALLBACK_LEVEL;
+};
+
+const getThemeConfig = (themeId) => {
+  let config = null;
+  try {
+    config = getThemeConfigRaw(themeId);
+  } catch {
+    config = null;
+  }
+  if (isValidThemeConfig(config)) {
+    return config;
+  }
+  const fallbackById = THEME_DEFINITIONS.find((theme) => theme && theme.id === DEFAULT_THEME_ID);
+  if (isValidThemeConfig(fallbackById)) {
+    return fallbackById;
+  }
+  return BUILTIN_FALLBACK_THEME;
+};
+
 const LOGICAL_WIDTH = 1024;
 const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
@@ -34,14 +188,11 @@ const PARKED_UNIT_TAP_RADIUS = 86;
 const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
-const REFERENCE_FIELD_X = 220;
-const REFERENCE_FIELD_Y = 216;
-const REFERENCE_FIELD_STEP = 32;
-const REFERENCE_CELL_SIZE = 30;
-const BOARD_FILL_COLOR = "#6aa93a";
-const FIELD_UNDERLAY_COLOR = "#6fb53f";
-const SHOOTER_CARD_Y_OFFSET = 160;
-const SHOOTER_SLOT_Y_OFFSET = 56;
+let REFERENCE_FIELD_X = 220;
+let REFERENCE_FIELD_Y = 216;
+let REFERENCE_FIELD_STEP = 32;
+let REFERENCE_CELL_SIZE = 30;
+let BOARD_FILL_COLOR = "#6aa93a";
 const VICTORY_ZOOM_TARGET = 1.12;
 const VICTORY_ZOOM_SPEED = 3.2;
 const VICTORY_CONFETTI_DURATION = 1.8;
@@ -68,7 +219,7 @@ const TIMER_PANEL_UI = {
   y: 36,
   w: 256,
   h: 95,
-  label: "Level 1",
+  label: "Level",
   textColor: "#335b90",
   textStroke: "rgba(255, 255, 255, 0.92)",
 };
@@ -98,59 +249,6 @@ const LOSE_POPUP_UI = {
   innerPadding: 18,
   closeSize: 40,
 };
-
-const LAYOUT = {
-  fieldX: 220,
-  fieldY: 329,
-  fieldStep: 32,
-  cellSize: 32,
-  fieldCols: 18,
-  fieldRows: 18,
-  track: {
-    x: 106,
-    y: 189,
-    w: 808,
-    h: 856,
-    r: 50,
-  },
-  spawnPoint: { x: 152, y: 979 },
-  cards: [
-    { lane: 0, row: 0, x: 312, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "green", styleKey: "mint", label: 1, ammo: 40 },
-    { lane: 1, row: 0, x: 552, y: 1070 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "black", styleKey: "coral", label: 2, ammo: 40 },
-    { lane: 0, row: 1, x: 312, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "green", styleKey: "sky", label: 3, ammo: 40 },
-    { lane: 1, row: 1, x: 552, y: 1272 + SHOOTER_CARD_Y_OFFSET, w: 160, h: 200, color: "black", styleKey: "gold", label: 4, ammo: 40 },
-  ],
-  slots: [
-    { x: 98, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
-    { x: 311, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
-    { x: 520, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
-    { x: 729, y: 1074 + SHOOTER_SLOT_Y_OFFSET, w: 194, h: 126 },
-  ],
-  wagonSprite: {
-    x: 44,
-    y: 840,
-    w: 148,
-    h: 116,
-    anchorX: 52,
-    anchorY: 96,
-    seatOffsetX: 0,
-    seatOffsetY: -52,
-  },
-  wagonMask: {
-    x: 0,
-    y: 820,
-    w: 260,
-    h: 200,
-  },
-  boardMask: {
-    x: 0,
-    y: 0,
-    w: 1024,
-    h: 1600,
-    r: 0,
-  },
-};
-
 const BASE_TOP_UI = {
   timerY: TIMER_PANEL_UI.y,
   timerW: TIMER_PANEL_UI.w,
@@ -163,20 +261,8 @@ const BASE_TOP_UI = {
   backH: BACK_BUTTON_UI.h,
 };
 
-const BASE_LAYOUT = {
-  fieldX: LAYOUT.fieldX,
-  fieldY: LAYOUT.fieldY,
-  fieldStep: LAYOUT.fieldStep,
-  cellSize: LAYOUT.cellSize,
-  fieldCols: LAYOUT.fieldCols,
-  fieldRows: LAYOUT.fieldRows,
-  track: { ...LAYOUT.track },
-  spawnPoint: { ...LAYOUT.spawnPoint },
-  slots: LAYOUT.slots.map((slot) => ({ ...slot })),
-  cards: LAYOUT.cards.map((card) => ({ ...card })),
-};
-
 const DEBUG_STORAGE_KEY = "pixelflow.debug.settings";
+const PLAYFIELD_SCALE_MIGRATION_KEY = "pixelflow.debug.playfieldScale.migrated.v1";
 const DEBUG_STORAGE_KEYS_FALLBACK = [
   "pixelflow.debug.settings.v4",
   "pixelflow.debug.settings.v3",
@@ -203,30 +289,11 @@ const DEBUG_DEFAULTS = {
   cardYOffset2: 7,
   cardYOffset3: 0,
   cardYOffset4: 0,
+  levelId: DEFAULT_LEVEL_ID,
+  themeId: DEFAULT_THEME_ID,
 };
 
-const FALLBACK_FIELD_PATTERN = [
-  "GGGGGGGGGGGGGGGGGG",
-  "GGGGGGGGGGGGGGGGGG",
-  "GGGGGGGGGGGGGGGGGG",
-  "GGGGGGGGGGGGGGGGGG",
-  "GGBBBBGGGGGGBBBBGG",
-  "GGBBBBGGGGGGBBBBGG",
-  "GGBBBBGGGGGGBBBBGG",
-  "GGBBBBGGGGGGBBBBGG",
-  "GGGGGGBBBBBBGGGGGG",
-  "GGGGGGBBBBBBGGGGGG",
-  "GGGGBBBBBBBBBBGGGG",
-  "GGGGBBBBBBBBBBGGGG",
-  "GGGGBBBBBBBBBBGGGG",
-  "GGGGBBBBBBBBBBGGGG",
-  "GGGGBBGGGGGGBBGGGG",
-  "GGGGBBGGGGGGBBGGGG",
-  "GGGGGGGGGGGGGGGGGG",
-  "GGGGGGGGGGGGGGGGGG",
-];
-
-const COLORS = {
+const DEFAULT_COLORS = {
   white: "#ffffff",
   shadow: "rgba(0, 0, 0, 0.55)",
   usedOverlay: "rgba(13, 15, 16, 0.56)",
@@ -247,7 +314,69 @@ const COLORS = {
   textGlow: "rgba(0, 0, 0, 0.45)",
 };
 
-const CONFETTI_COLORS = ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"];
+let CURRENT_LEVEL = getLevelConfig(DEFAULT_LEVEL_ID);
+let CURRENT_THEME = getThemeConfig(DEFAULT_THEME_ID);
+let LAYOUT = cloneLevelLayout(CURRENT_LEVEL.layout);
+let BASE_LAYOUT = createBaseLayout(LAYOUT);
+let FALLBACK_FIELD_PATTERN = [...CURRENT_LEVEL.fallbackFieldPattern];
+let COLORS = { ...DEFAULT_COLORS, ...(CURRENT_THEME.colors || {}) };
+let CONFETTI_COLORS = [...(CURRENT_THEME.confettiColors || ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"])];
+
+syncLevelGlobals(CURRENT_LEVEL);
+syncThemeGlobals(CURRENT_THEME);
+
+function cloneData(value) {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value));
+}
+
+function cloneLevelLayout(layout) {
+  return cloneData(layout);
+}
+
+function createBaseLayout(layout) {
+  return {
+    fieldX: layout.fieldX,
+    fieldY: layout.fieldY,
+    fieldStep: layout.fieldStep,
+    cellSize: layout.cellSize,
+    fieldCols: layout.fieldCols,
+    fieldRows: layout.fieldRows,
+    track: { ...layout.track },
+    spawnPoint: { ...layout.spawnPoint },
+    slots: layout.slots.map((slot) => ({ ...slot })),
+    cards: layout.cards.map((card) => ({ ...card })),
+  };
+}
+
+function syncLevelGlobals(levelConfig) {
+  CURRENT_LEVEL = cloneData(levelConfig);
+  LAYOUT = cloneLevelLayout(CURRENT_LEVEL.layout);
+  BASE_LAYOUT = createBaseLayout(LAYOUT);
+  FALLBACK_FIELD_PATTERN = [...(CURRENT_LEVEL.fallbackFieldPattern || [])];
+  REFERENCE_FIELD_X = Number(CURRENT_LEVEL.referenceGrid?.x ?? 220);
+  REFERENCE_FIELD_Y = Number(CURRENT_LEVEL.referenceGrid?.y ?? 216);
+  REFERENCE_FIELD_STEP = Number(CURRENT_LEVEL.referenceGrid?.step ?? 32);
+  REFERENCE_CELL_SIZE = Number(CURRENT_LEVEL.referenceGrid?.cellSize ?? 30);
+  TIMER_PANEL_UI.label = CURRENT_LEVEL.name || "Level";
+  if (typeof document !== "undefined") {
+    document.title = `PixelFlow - ${TIMER_PANEL_UI.label}`;
+  }
+}
+
+function syncThemeGlobals(themeConfig) {
+  CURRENT_THEME = cloneData(themeConfig);
+  BOARD_FILL_COLOR = String(CURRENT_THEME.board?.fill || "#6aa93a");
+  COLORS = { ...DEFAULT_COLORS, ...(CURRENT_THEME.colors || {}) };
+  CONFETTI_COLORS = [...(CURRENT_THEME.confettiColors || ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"])];
+}
+
+function getThemeAsset(key, fallbackPath) {
+  const value = CURRENT_THEME.assets?.[key];
+  return typeof value === "string" && value.length > 0 ? value : fallbackPath;
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -976,22 +1105,31 @@ class Game {
     this.ctx = canvas.getContext("2d", { alpha: false });
     this.width = LOGICAL_WIDTH;
     this.height = LOGICAL_HEIGHT;
+    this.screenWidth = LOGICAL_WIDTH;
+    this.screenHeight = LOGICAL_HEIGHT;
+    this.viewportScale = 1;
+    this.viewportOffsetX = 0;
+    this.viewportOffsetY = 0;
     this.dpr = 1;
+    this.currentLevelId = CURRENT_LEVEL.id;
+    this.currentThemeId = CURRENT_THEME.id;
+    this.availableLevels = LEVEL_DEFINITIONS.map((level) => ({ id: level.id, name: level.name }));
+    this.availableThemes = THEME_DEFINITIONS.map((theme) => ({ id: theme.id, name: theme.name }));
 
     this.referenceImage = new Image();
-    this.referenceImage.src = "Ref.png";
+    this.referenceImage.src = getThemeAsset("referenceImage", "Ref.png");
     this.referenceImage.decoding = "sync";
     this.backButtonImage = new Image();
-    this.backButtonImage.src = "ui/back_button.png";
+    this.backButtonImage.src = getThemeAsset("backButton", "ui/back_button.png");
     this.backButtonImage.decoding = "sync";
     this.timerPanelImage = new Image();
-    this.timerPanelImage.src = "ui/timer_panel.png";
+    this.timerPanelImage.src = getThemeAsset("timerPanel", "ui/timer_panel.png");
     this.timerPanelImage.decoding = "sync";
     this.restartButtonImage = new Image();
-    this.restartButtonImage.src = "ui/restart_button.png";
+    this.restartButtonImage.src = getThemeAsset("restartButton", "ui/restart_button.png");
     this.restartButtonImage.decoding = "sync";
     this.losePopupImage = new Image();
-    this.losePopupImage.src = "ui/lose_popup_ref.png";
+    this.losePopupImage.src = getThemeAsset("losePopup", "ui/lose_popup_ref.png");
     this.losePopupImage.decoding = "sync";
 
     this.referenceLayer = document.createElement("canvas");
@@ -1058,8 +1196,11 @@ class Game {
     this.levelStartFade = 0;
     this.losePopupAppear = 1;
     this.debugPanel = document.getElementById("debugPanel");
+    this.debugToggleFab = document.getElementById("debugToggleFab");
     this.debugButton = document.getElementById("debug6");
     this.debugResetButton = document.getElementById("debugReset");
+    this.debugLevelSelect = document.getElementById("debugLevelSelect");
+    this.debugThemeSelect = document.getElementById("debugThemeSelect");
     this.shotBounceSizeInput = document.getElementById("shotBounceSize");
     this.shotBounceSizeValue = document.getElementById("shotBounceSizeValue");
     this.shotBounceSpeedInput = document.getElementById("shotBounceSpeed");
@@ -1346,8 +1487,8 @@ class Game {
     const sub = 16;
     for (let y = rect.y; y < rect.y + rect.h; y += patch) {
       for (let x = rect.x; x < rect.x + rect.w; x += patch) {
-        const tileX = Math.floor((x - rect.x) / patch);
-        const tileY = Math.floor((y - rect.y) / patch);
+        const tileX = Math.floor(x / patch);
+        const tileY = Math.floor(y / patch);
         const seed = tileX * 17 + tileY * 31;
         ctx.fillStyle = palette[Math.abs(seed) % palette.length];
         ctx.fillRect(x, y, patch, patch);
@@ -1373,23 +1514,43 @@ class Game {
   }
 
   drawGrassBackdrop(ctx, rect) {
+    const boardTheme = CURRENT_THEME.board || {};
     this.drawTiledBackdrop(
       ctx,
       rect,
-      BOARD_FILL_COLOR,
-      ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"],
-      "rgba(28, 52, 14, 0.16)"
+      boardTheme.fill || BOARD_FILL_COLOR,
+      boardTheme.grassPalette || ["#6a9f35", "#72aa3a", "#7bb642", "#5f9430", "#89c84b"],
+      boardTheme.grassShade || "rgba(28, 52, 14, 0.16)"
     );
   }
 
   drawDirtBackdrop(ctx, rect) {
+    const boardTheme = CURRENT_THEME.board || {};
     this.drawTiledBackdrop(
       ctx,
       rect,
-      "#b98c5e",
-      ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
-      "rgba(64, 40, 22, 0.2)"
+      boardTheme.dirtFill || "#b98c5e",
+      boardTheme.dirtPalette || ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
+      boardTheme.dirtShade || "rgba(64, 40, 22, 0.2)"
     );
+  }
+
+  drawViewportBackdrop(ctx) {
+    const worldRect = {
+      x: -this.viewportOffsetX / this.viewportScale,
+      y: -this.viewportOffsetY / this.viewportScale,
+      w: this.screenWidth / this.viewportScale,
+      h: this.screenHeight / this.viewportScale,
+    };
+    this.drawGrassBackdrop(ctx, worldRect);
+  }
+
+  updateViewportTransform() {
+    const scaleX = this.screenWidth / this.width;
+    const scaleY = this.screenHeight / this.height;
+    this.viewportScale = Math.max(0.0001, Math.min(scaleX, scaleY));
+    this.viewportOffsetX = Math.round((this.screenWidth - this.width * this.viewportScale) * 0.5);
+    this.viewportOffsetY = Math.round((this.screenHeight - this.height * this.viewportScale) * 0.5);
   }
 
   restart() {
@@ -1519,39 +1680,98 @@ class Game {
     return changed;
   }
 
-  applyDebugLayout() {
-    BACK_BUTTON_UI.y = Math.round(BASE_TOP_UI.backY + TOP_UI_Y_OFFSET);
-    TIMER_PANEL_UI.y = Math.round(BASE_TOP_UI.timerY + TOP_UI_Y_OFFSET);
-    COINS_UI.panelY = Math.round(BASE_TOP_UI.coinsY + TOP_UI_Y_OFFSET);
+  getViewportAdaptiveTuning() {
+    const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
+    const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
+    const isPortrait = vh >= vw;
+    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
+    if (!isMobileLike) {
+      return {
+        playfieldScaleMul: 1,
+        topUiYOffsetAdd: 0,
+        trackYOffsetAdd: 0,
+        slotYOffsetAdd: 0,
+        cardYOffsetAllAdd: 0,
+        cardOffsetMul: 1,
+        backButtonScaleMul: 1,
+        topLevelPanelScaleMul: 1,
+        topCoinsPanelScaleMul: 1,
+      };
+    }
 
-    TIMER_PANEL_UI.w = Math.round(BASE_TOP_UI.timerW * TOP_LEVEL_PANEL_SCALE);
-    TIMER_PANEL_UI.h = Math.round(BASE_TOP_UI.timerH * TOP_LEVEL_PANEL_SCALE);
-    COINS_UI.panelW = Math.round(BASE_TOP_UI.coinsW * TOP_COINS_PANEL_SCALE);
-    COINS_UI.panelH = Math.round(BASE_TOP_UI.coinsH * TOP_COINS_PANEL_SCALE);
+    const shortSide = Math.min(vw, vh);
+    const compactness = clamp((430 - shortSide) / 210, 0, 1);
+    if (isPortrait) {
+      return {
+        playfieldScaleMul: 1.1 + compactness * 0.1,
+        topUiYOffsetAdd: -26 - compactness * 18,
+        trackYOffsetAdd: -24 - compactness * 22,
+        slotYOffsetAdd: -24 - compactness * 22,
+        cardYOffsetAllAdd: -132 - compactness * 68,
+        cardOffsetMul: 0.34,
+        backButtonScaleMul: 1.08,
+        topLevelPanelScaleMul: 0.94,
+        topCoinsPanelScaleMul: 0.98,
+      };
+    }
+
+    return {
+      playfieldScaleMul: 1.03,
+      topUiYOffsetAdd: -12,
+      trackYOffsetAdd: -10,
+      slotYOffsetAdd: -10,
+      cardYOffsetAllAdd: -48,
+      cardOffsetMul: 0.7,
+      backButtonScaleMul: 1.04,
+      topLevelPanelScaleMul: 0.96,
+      topCoinsPanelScaleMul: 0.98,
+    };
+  }
+
+  applyDebugLayout() {
+    const tuning = this.getViewportAdaptiveTuning();
+    const effectiveTopUiYOffset = TOP_UI_Y_OFFSET + tuning.topUiYOffsetAdd;
+    const effectiveTrackYOffset = TRACK_Y_OFFSET + tuning.trackYOffsetAdd;
+    const effectiveSlotYOffset = SLOT_Y_OFFSET + tuning.slotYOffsetAdd;
+    const effectiveCardYOffsetAll = CARD_Y_OFFSET_ALL + tuning.cardYOffsetAllAdd;
+    const effectiveCardOffsetMul = tuning.cardOffsetMul;
+    const effectivePlayfieldScale = PLAYFIELD_SCALE * tuning.playfieldScaleMul;
+    const effectiveBackButtonScale = BACK_BUTTON_SCALE * tuning.backButtonScaleMul;
+    const effectiveTopLevelPanelScale = TOP_LEVEL_PANEL_SCALE * tuning.topLevelPanelScaleMul;
+    const effectiveTopCoinsPanelScale = TOP_COINS_PANEL_SCALE * tuning.topCoinsPanelScaleMul;
+
+    BACK_BUTTON_UI.y = Math.round(BASE_TOP_UI.backY + effectiveTopUiYOffset);
+    TIMER_PANEL_UI.y = Math.round(BASE_TOP_UI.timerY + effectiveTopUiYOffset);
+    COINS_UI.panelY = Math.round(BASE_TOP_UI.coinsY + effectiveTopUiYOffset);
+
+    TIMER_PANEL_UI.w = Math.round(BASE_TOP_UI.timerW * effectiveTopLevelPanelScale);
+    TIMER_PANEL_UI.h = Math.round(BASE_TOP_UI.timerH * effectiveTopLevelPanelScale);
+    COINS_UI.panelW = Math.round(BASE_TOP_UI.coinsW * effectiveTopCoinsPanelScale);
+    COINS_UI.panelH = Math.round(BASE_TOP_UI.coinsH * effectiveTopCoinsPanelScale);
     this.backButtonRect.y = BACK_BUTTON_UI.y;
-    this.backButtonRect.w = Math.round(BASE_TOP_UI.backW * BACK_BUTTON_SCALE);
-    this.backButtonRect.h = Math.round(BASE_TOP_UI.backH * BACK_BUTTON_SCALE);
+    this.backButtonRect.w = Math.round(BASE_TOP_UI.backW * effectiveBackButtonScale);
+    this.backButtonRect.h = Math.round(BASE_TOP_UI.backH * effectiveBackButtonScale);
     this.restartButtonRect = this.getRestartButtonRect();
 
     const baseTrackCenterX = BASE_LAYOUT.track.x + BASE_LAYOUT.track.w * 0.5;
-    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + TRACK_Y_OFFSET;
-    LAYOUT.track.w = Math.max(120, Math.round(BASE_LAYOUT.track.w * PLAYFIELD_SCALE));
-    LAYOUT.track.h = Math.max(120, Math.round(BASE_LAYOUT.track.h * PLAYFIELD_SCALE));
-    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * PLAYFIELD_SCALE));
+    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
+    LAYOUT.track.w = Math.max(120, Math.round(BASE_LAYOUT.track.w * effectivePlayfieldScale));
+    LAYOUT.track.h = Math.max(120, Math.round(BASE_LAYOUT.track.h * effectivePlayfieldScale));
+    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * effectivePlayfieldScale));
     LAYOUT.track.x = Math.round(baseTrackCenterX - LAYOUT.track.w * 0.5);
     LAYOUT.track.y = Math.round(baseTrackCenterY - LAYOUT.track.h * 0.5);
     const baseSpawnOffsetX = BASE_LAYOUT.spawnPoint.x - baseTrackCenterX;
     const baseSpawnOffsetY = BASE_LAYOUT.spawnPoint.y - (BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5);
-    LAYOUT.spawnPoint.x = Math.round(baseTrackCenterX + baseSpawnOffsetX * PLAYFIELD_SCALE);
-    LAYOUT.spawnPoint.y = Math.round(baseTrackCenterY + baseSpawnOffsetY * PLAYFIELD_SCALE);
+    LAYOUT.spawnPoint.x = Math.round(baseTrackCenterX + baseSpawnOffsetX * effectivePlayfieldScale);
+    LAYOUT.spawnPoint.y = Math.round(baseTrackCenterY + baseSpawnOffsetY * effectivePlayfieldScale);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
 
-    const totalFieldScale = PLAYFIELD_SCALE * FIELD_SCALE;
+    const totalFieldScale = effectivePlayfieldScale * FIELD_SCALE;
     LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * totalFieldScale));
     LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * totalFieldScale));
     const baseFieldCenterX = BASE_LAYOUT.fieldX + (BASE_LAYOUT.fieldCols * BASE_LAYOUT.fieldStep) * 0.5;
     const baseFieldCenterY = BASE_LAYOUT.fieldY + (BASE_LAYOUT.fieldRows * BASE_LAYOUT.fieldStep) * 0.5;
-    const shiftedFieldCenterY = baseFieldCenterY + TRACK_Y_OFFSET;
+    const shiftedFieldCenterY = baseFieldCenterY + effectiveTrackYOffset;
     const fieldW = BASE_LAYOUT.fieldCols * LAYOUT.fieldStep;
     const fieldH = BASE_LAYOUT.fieldRows * LAYOUT.fieldStep;
     LAYOUT.fieldX = Math.round(baseFieldCenterX - fieldW * 0.5);
@@ -1572,7 +1792,7 @@ class Game {
       const w = Math.max(90, Math.round(baseSlot.w * SLOT_SIZE_SCALE));
       const h = Math.max(72, Math.round(baseSlot.h * SLOT_SIZE_SCALE));
       const centerX = baseSlot.x + baseSlot.w * 0.5;
-      const centerY = baseSlot.y + baseSlot.h * 0.5 + SLOT_Y_OFFSET;
+      const centerY = baseSlot.y + baseSlot.h * 0.5 + effectiveSlotYOffset;
       slot.w = w;
       slot.h = h;
       slot.x = Math.round(centerX - w * 0.5);
@@ -1581,13 +1801,87 @@ class Game {
 
     const dynamicCardLayouts = BASE_LAYOUT.cards.map((baseCard, index) => ({
       ...baseCard,
-      y: Math.round(baseCard.y + CARD_Y_OFFSET_ALL + getCardYOffsetByIndex(index)),
+      y: Math.round(baseCard.y + effectiveCardYOffsetAll + getCardYOffsetByIndex(index) * effectiveCardOffsetMul),
     }));
     this.cardManager.setBaseLayouts(dynamicCardLayouts);
     this.cardManager.setQueueCardCount(this.cardManager.queueCardCount);
     this.cards = this.cardManager.normalizeQueues(this.cards);
 
     this.invalidate(false);
+  }
+
+  getValidLevelId(levelId) {
+    const normalized = String(levelId || "");
+    return this.availableLevels.some((level) => level.id === normalized) ? normalized : DEFAULT_LEVEL_ID;
+  }
+
+  getValidThemeId(themeId) {
+    const normalized = String(themeId || "");
+    return this.availableThemes.some((theme) => theme.id === normalized) ? normalized : DEFAULT_THEME_ID;
+  }
+
+  setImageSource(image, nextSrc) {
+    if (!image || !nextSrc || image.src.endsWith(nextSrc)) {
+      return false;
+    }
+    image.src = nextSrc;
+    return true;
+  }
+
+  applyLevelConfig(levelId, options = {}) {
+    const { restart = true } = options;
+    const nextLevelId = this.getValidLevelId(levelId);
+    syncLevelGlobals(getLevelConfig(nextLevelId));
+    this.currentLevelId = nextLevelId;
+    this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
+    this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
+    this.cardManager = new CardManager(LAYOUT.cards, BOTTOM_QUEUE_CARD_COUNT);
+    this.slotManager = new SlotManager(LAYOUT.slots, SLOT_CLAIM_ORDER);
+    this.cards = [];
+    this.blocks = [];
+    this.blocksBySpiral = [];
+    this.setWagonIdle();
+    this.applyDebugLayout();
+    if (restart && this.referenceImage.complete) {
+      this.restart();
+    }
+    this.invalidate(false);
+  }
+
+  applyThemeConfig(themeId, options = {}) {
+    const { restart = true } = options;
+    const nextThemeId = this.getValidThemeId(themeId);
+    syncThemeGlobals(getThemeConfig(nextThemeId));
+    this.currentThemeId = nextThemeId;
+
+    const nextReference = getThemeAsset("referenceImage", "Ref.png");
+    const referenceChanged = this.setImageSource(this.referenceImage, nextReference);
+    this.setImageSource(this.backButtonImage, getThemeAsset("backButton", "ui/back_button.png"));
+    this.setImageSource(this.timerPanelImage, getThemeAsset("timerPanel", "ui/timer_panel.png"));
+    this.setImageSource(this.restartButtonImage, getThemeAsset("restartButton", "ui/restart_button.png"));
+    this.setImageSource(this.losePopupImage, getThemeAsset("losePopup", "ui/lose_popup_ref.png"));
+
+    if (referenceChanged) {
+      this.gameState = "loading";
+      this.invalidate(false);
+      return;
+    }
+
+    if (!referenceChanged) {
+      if (this.referenceImage.complete) {
+        this.buildReferenceAssets();
+      }
+      if (restart && this.referenceImage.complete) {
+        this.restart();
+      }
+      this.invalidate(false);
+    }
+  }
+
+  applyContentConfig(levelId, themeId, options = {}) {
+    const { restart = true } = options;
+    this.applyThemeConfig(themeId, { restart: false });
+    this.applyLevelConfig(levelId, { restart });
   }
 
   getDebugSettingsState() {
@@ -1611,6 +1905,8 @@ class Game {
       cardYOffset2: CARD_Y_OFFSET_2,
       cardYOffset3: CARD_Y_OFFSET_3,
       cardYOffset4: CARD_Y_OFFSET_4,
+      levelId: this.getValidLevelId(this.currentLevelId),
+      themeId: this.getValidThemeId(this.currentThemeId),
     };
   }
 
@@ -1638,22 +1934,12 @@ class Game {
     CARD_Y_OFFSET_2 = clamp(Number(settings.cardYOffset2 ?? DEBUG_DEFAULTS.cardYOffset2), -260, 260);
     CARD_Y_OFFSET_3 = clamp(Number(settings.cardYOffset3 ?? DEBUG_DEFAULTS.cardYOffset3), -260, 260);
     CARD_Y_OFFSET_4 = clamp(Number(settings.cardYOffset4 ?? DEBUG_DEFAULTS.cardYOffset4), -260, 260);
+    this.currentLevelId = this.getValidLevelId(settings.levelId ?? DEBUG_DEFAULTS.levelId);
+    this.currentThemeId = this.getValidThemeId(settings.themeId ?? DEBUG_DEFAULTS.themeId);
   }
 
   loadDebugSettings() {
     try {
-      const fromHash = readDebugStateFromHash();
-      if (fromHash) {
-        this.applyDebugSettings({
-          ...DEBUG_DEFAULTS,
-          ...fromHash,
-          // Keep this slider fixed to the product default on every reload.
-          playfieldScale: DEBUG_DEFAULTS.playfieldScale,
-        });
-        this.saveDebugSettings();
-        return;
-      }
-
       let raw = window.localStorage.getItem(DEBUG_STORAGE_KEY);
       if (!raw) {
         for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
@@ -1664,19 +1950,47 @@ class Game {
         }
       }
       if (!raw) {
+        const fromHash = readDebugStateFromHash();
+        if (fromHash) {
+          this.applyDebugSettings({
+            ...DEBUG_DEFAULTS,
+            ...fromHash,
+          });
+          this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
+          this.saveDebugSettings();
+          return;
+        }
+
         this.applyDebugSettings(DEBUG_DEFAULTS);
+        this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
         return;
       }
       const parsed = JSON.parse(raw);
       this.applyDebugSettings({
         ...DEBUG_DEFAULTS,
         ...(parsed || {}),
-        // Keep this slider fixed to the product default on every reload.
-        playfieldScale: DEBUG_DEFAULTS.playfieldScale,
       });
+      this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
+      this.ensurePlayfieldScaleMigration();
       this.saveDebugSettings();
     } catch {
       this.applyDebugSettings(DEBUG_DEFAULTS);
+      this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
+      this.ensurePlayfieldScaleMigration();
+    }
+  }
+
+  ensurePlayfieldScaleMigration() {
+    try {
+      const migrated = window.localStorage.getItem(PLAYFIELD_SCALE_MIGRATION_KEY);
+      if (migrated === "1") {
+        return;
+      }
+      PLAYFIELD_SCALE = DEBUG_DEFAULTS.playfieldScale;
+      this.applyDebugLayout();
+      window.localStorage.setItem(PLAYFIELD_SCALE_MIGRATION_KEY, "1");
+    } catch {
+      // Ignore storage errors.
     }
   }
 
@@ -1763,7 +2077,9 @@ class Game {
   resetDebugSettings() {
     this.suppressDebugSave = true;
     this.applyDebugSettings(DEBUG_DEFAULTS);
+    this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
     this.syncDebugInputsFromState();
+    this.syncDebugContentSelectors();
     this.suppressDebugSave = false;
     this.clearDebugSettings();
     this.applyDebugLayout();
@@ -1802,9 +2118,16 @@ class Game {
   }
 
   getCellColor(col, row) {
+    const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
+    const fallbackCell = fallbackRow[col];
+    if (fallbackCell === "G") {
+      return "green";
+    }
+    if (fallbackCell === "B") {
+      return "black";
+    }
     if (!this.referencePixels) {
-      const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
-      return fallbackRow[col] === "G" ? "green" : "black";
+      return "black";
     }
     return this.sampleReferenceCellColor(col, row);
   }
@@ -2501,11 +2824,13 @@ class Game {
     ctx.font = "700 42px Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    const label = this.gameState === "error" ? "Ref.png failed to load" : "Loading Ref.png...";
+    const source = getThemeAsset("referenceImage", "Ref.png").split("/").pop() || "Ref.png";
+    const label = this.gameState === "error" ? `${source} failed to load` : `Loading ${source}...`;
     ctx.fillText(label, this.width / 2, this.height / 2);
   }
 
   drawBackground(ctx) {
+    const trackTheme = CURRENT_THEME.track || {};
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, this.width, this.height);
     const board = LAYOUT.boardMask;
@@ -2535,9 +2860,10 @@ class Game {
     roundedRect(ctx, outerWood.x, outerWood.y, outerWood.w, outerWood.h, outerWood.r);
     roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
     const woodGrad = ctx.createLinearGradient(0, outerWood.y, 0, outerWood.y + outerWood.h);
-    woodGrad.addColorStop(0, "#9f6e34");
-    woodGrad.addColorStop(0.5, "#6f451f");
-    woodGrad.addColorStop(1, "#a47539");
+    const woodStops = trackTheme.woodGradient || ["#9f6e34", "#6f451f", "#a47539"];
+    woodGrad.addColorStop(0, woodStops[0] || "#9f6e34");
+    woodGrad.addColorStop(0.5, woodStops[1] || woodStops[0] || "#6f451f");
+    woodGrad.addColorStop(1, woodStops[2] || woodStops[1] || "#a47539");
     ctx.fillStyle = woodGrad;
     // roundedRect() starts a new path internally, so fill the outer wood first...
     ctx.fill();
@@ -2559,9 +2885,9 @@ class Game {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(angle);
-      ctx.fillStyle = "#5b3619";
+      ctx.fillStyle = trackTheme.sleeperColor || "#5b3619";
       ctx.fillRect(-19, -6, 38, 12);
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillStyle = trackTheme.sleeperHighlight || "rgba(255,255,255,0.12)";
       ctx.fillRect(-19, -6, 38, 3);
       ctx.restore();
     }
@@ -2583,11 +2909,11 @@ class Game {
     };
     const strokeRail = (rect) => {
       roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
-      ctx.strokeStyle = "#ded7ca";
+      ctx.strokeStyle = trackTheme.railMain || "#ded7ca";
       ctx.lineWidth = 6;
       ctx.stroke();
       roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
-      ctx.strokeStyle = "rgba(55,55,55,0.35)";
+      ctx.strokeStyle = trackTheme.railShadow || "rgba(55,55,55,0.35)";
       ctx.lineWidth = 2;
       ctx.stroke();
     };
@@ -2599,16 +2925,18 @@ class Game {
   }
 
   drawVictoryBackground(ctx) {
+    const victoryTheme = CURRENT_THEME.victory || {};
+    const gradientStops = victoryTheme.gradient || ["#d8f3ff", "#a8ddff", "#8bc9ff"];
     const gradient = ctx.createLinearGradient(0, 0, 0, this.height);
-    gradient.addColorStop(0, "#d8f3ff");
-    gradient.addColorStop(0.55, "#a8ddff");
-    gradient.addColorStop(1, "#8bc9ff");
+    gradient.addColorStop(0, gradientStops[0] || "#d8f3ff");
+    gradient.addColorStop(0.55, gradientStops[1] || gradientStops[0] || "#a8ddff");
+    gradient.addColorStop(1, gradientStops[2] || gradientStops[1] || "#8bc9ff");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, this.width, this.height);
 
     ctx.save();
     ctx.globalAlpha = 0.45;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+    ctx.fillStyle = victoryTheme.cloudColor || "rgba(255, 255, 255, 0.7)";
     ctx.beginPath();
     ctx.arc(this.width * 0.16, this.height * 0.18, 120, 0, Math.PI * 2);
     ctx.fill();
@@ -2619,6 +2947,7 @@ class Game {
   }
 
   drawVictoryArtwork(ctx) {
+    const victoryTheme = CURRENT_THEME.victory || {};
     const floatOffset = Math.sin(this.victoryFloatTime * Math.PI * VICTORY_FLOAT_SPEED) * VICTORY_FLOAT_AMPLITUDE;
     const boardX = LAYOUT.fieldX;
     const boardY = LAYOUT.fieldY + VICTORY_ART_OFFSET_Y;
@@ -2631,7 +2960,7 @@ class Game {
     ctx.shadowBlur = 30;
     ctx.shadowOffsetY = 18;
     roundedRect(ctx, boardX - 12, boardY - 12, boardW + 24, boardH + 24, 18);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+    ctx.fillStyle = victoryTheme.boardGlow || "rgba(255, 255, 255, 0.42)";
     ctx.fill();
     ctx.restore();
 
@@ -3523,15 +3852,23 @@ class Game {
 
   render() {
     const ctx = this.ctx;
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, this.screenWidth, this.screenHeight);
+    ctx.save();
+    ctx.translate(this.viewportOffsetX, this.viewportOffsetY);
+    ctx.scale(this.viewportScale, this.viewportScale);
+    this.drawViewportBackdrop(ctx);
+
     if (this.gameState === "loading") {
       this.drawLoading(ctx);
       this.drawTopTimerPanel(ctx);
       this.drawTopCoinsPanel(ctx);
       this.drawBackButton(ctx);
+      ctx.restore();
+      this.needsRender = false;
       return;
     }
 
-    ctx.clearRect(0, 0, this.width, this.height);
     if (this.gameState === "victory") {
       this.drawVictoryBackground(ctx);
       const fieldCenter = this.getFieldCenter();
@@ -3546,6 +3883,7 @@ class Game {
       this.drawTopCoinsPanel(ctx);
       this.drawBackButton(ctx);
       this.drawLevelStartFade(ctx);
+      ctx.restore();
       this.needsRender = false;
       return;
     }
@@ -3577,6 +3915,7 @@ class Game {
     if (this.gameState === "lose") {
       this.drawLosePopup(ctx);
     }
+    ctx.restore();
     this.needsRender = false;
   }
 
@@ -3643,12 +3982,16 @@ class Game {
   }
 
   resize() {
+    const rect = this.canvas.getBoundingClientRect();
+    this.screenWidth = Math.max(1, Math.round(rect.width || window.innerWidth || this.width));
+    this.screenHeight = Math.max(1, Math.round(rect.height || window.innerHeight || this.height));
     this.dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
-    this.canvas.width = this.width * this.dpr;
-    this.canvas.height = this.height * this.dpr;
+    this.canvas.width = this.screenWidth * this.dpr;
+    this.canvas.height = this.screenHeight * this.dpr;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.ctx.imageSmoothingEnabled = false;
-    this.invalidate(false);
+    this.updateViewportTransform();
+    this.applyDebugLayout();
   }
 
   hitTest(x, y, rect) {
@@ -3693,16 +4036,69 @@ class Game {
 
   getPointerPosition(event) {
     const rect = this.canvas.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    const worldX = (px - this.viewportOffsetX) / this.viewportScale;
+    const worldY = (py - this.viewportOffsetY) / this.viewportScale;
+    if (worldX < 0 || worldY < 0 || worldX > this.width || worldY > this.height) {
+      return null;
+    }
     return {
-      x: (event.clientX - rect.left) * (this.width / rect.width),
-      y: (event.clientY - rect.top) * (this.height / rect.height),
+      x: worldX,
+      y: worldY,
     };
+  }
+
+  syncDebugContentSelectors() {
+    if (this.debugLevelSelect) {
+      this.debugLevelSelect.value = this.getValidLevelId(this.currentLevelId);
+    }
+    if (this.debugThemeSelect) {
+      this.debugThemeSelect.value = this.getValidThemeId(this.currentThemeId);
+    }
+  }
+
+  initDebugContentSelectors() {
+    const fillSelect = (select, options, selectedId) => {
+      if (!select) {
+        return;
+      }
+      select.innerHTML = "";
+      for (const optionData of options) {
+        const option = document.createElement("option");
+        option.value = optionData.id;
+        option.textContent = optionData.name;
+        select.appendChild(option);
+      }
+      select.value = selectedId;
+    };
+
+    fillSelect(this.debugLevelSelect, this.availableLevels, this.getValidLevelId(this.currentLevelId));
+    fillSelect(this.debugThemeSelect, this.availableThemes, this.getValidThemeId(this.currentThemeId));
+
+    if (this.debugLevelSelect) {
+      this.debugLevelSelect.addEventListener("change", () => {
+        this.applyLevelConfig(this.debugLevelSelect.value, { restart: true });
+        this.syncDebugContentSelectors();
+        this.saveDebugSettings();
+      });
+    }
+
+    if (this.debugThemeSelect) {
+      this.debugThemeSelect.addEventListener("change", () => {
+        this.applyThemeConfig(this.debugThemeSelect.value, { restart: true });
+        this.syncDebugContentSelectors();
+        this.saveDebugSettings();
+      });
+    }
   }
 
   initDebugControls() {
     if (this.debugPanel) {
       this.debugPanel.classList.remove("is-visible");
     }
+    this.initDebugContentSelectors();
+    this.syncDebugContentSelectors();
     const bindRange = (input, output, currentValue, parseValue, formatValue, onApply) => {
       if (!input) {
         return;
@@ -3968,6 +4364,9 @@ class Game {
     if (this.debugPanel) {
       this.debugPanel.classList.toggle("is-visible", visible);
     }
+    if (this.debugToggleFab) {
+      this.debugToggleFab.textContent = visible ? "CLOSE" : "DBG";
+    }
   }
 
   toggleDebugPanel() {
@@ -3981,7 +4380,7 @@ class Game {
         return;
       }
       const tag = event.target && event.target.tagName ? String(event.target.tagName).toLowerCase() : "";
-      if (tag === "input" || tag === "textarea") {
+      if (tag === "input" || tag === "textarea" || tag === "select") {
         return;
       }
       this.toggleDebugPanel();
@@ -3989,10 +4388,17 @@ class Game {
     });
     this.canvas.addEventListener("pointermove", (event) => {
       const point = this.getPointerPosition(event);
+      if (!point) {
+        this.canvas.style.cursor = "default";
+        return;
+      }
       this.handlePointerMove(point.x, point.y);
     });
     this.canvas.addEventListener("pointerdown", (event) => {
       const point = this.getPointerPosition(event);
+      if (!point) {
+        return;
+      }
       this.handlePointerDown(point.x, point.y);
       event.preventDefault();
     });
@@ -4005,6 +4411,12 @@ class Game {
     if (this.debugResetButton) {
       this.debugResetButton.addEventListener("click", (event) => {
         this.resetDebugSettings();
+        event.preventDefault();
+      });
+    }
+    if (this.debugToggleFab) {
+      this.debugToggleFab.addEventListener("click", (event) => {
+        this.toggleDebugPanel();
         event.preventDefault();
       });
     }
@@ -4023,7 +4435,9 @@ class Game {
     return JSON.stringify({
       mode: this.gameState,
       scene: "reference_reskin",
-      source: "Ref.png",
+      source: getThemeAsset("referenceImage", "Ref.png"),
+      levelId: this.currentLevelId,
+      themeId: this.currentThemeId,
       unitTheme: "numbered_slimes",
       coordinateSystem: {
         origin: "top-left",
