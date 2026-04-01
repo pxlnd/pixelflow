@@ -270,20 +270,32 @@ let SHOT_BOUNCE_AMOUNT = 0.2;
 let SHOT_BOUNCE_SPEED = 1;
 let TRACK_UNIT_SPEED = 980;
 let BOTTOM_QUEUE_CARD_COUNT = 7;
+let CHICKEN_SIZE_SCALE = 1;
 let TOP_PANEL_FONT_SIZE = 67;
 let TOP_LEVEL_PANEL_SCALE = 1.2;
 let TOP_COINS_PANEL_SCALE = 1.2;
 let BACK_BUTTON_SCALE = 1.2;
-let TRACK_Y_OFFSET = 50;
+let TRACK_Y_OFFSET = 42;
+let TRACK_Y_OFFSET_MOBILE = -33;
 let PLAYFIELD_SCALE = 0.88;
-let SLOT_SIZE_SCALE = 1.15;
-let SLOT_Y_OFFSET = -63;
+let SLOT_SIZE_SCALE = 1.12;
+let SLOT_Y_OFFSET = -72;
+let SLOT_SPACING_X_MOBILE = 1.03;
+let SLOT_SPACING_X_DESKTOP = 0.88;
+let TRAY_BOTTOM_OFFSET = 82;
+let TRAY_BOTTOM_OFFSET_DESKTOP = 60;
+let TRAY_SCALE_Y_MOBILE = 1.14;
+let TRAY_SCALE_Y_DESKTOP = 1.05;
 let TOP_UI_Y_OFFSET = 65;
+let TOP_UI_Y_OFFSET_MOBILE = 35;
+let MOBILE_BOTTOM_CLUSTER_Y_OFFSET = -42;
 let CARD_Y_OFFSET_ALL = -72;
 let CARD_Y_OFFSET_1 = 60;
 let CARD_Y_OFFSET_2 = 7;
 let CARD_Y_OFFSET_3 = 0;
 let CARD_Y_OFFSET_4 = 0;
+let QUEUE_SPACING_X_MOBILE = 1;
+let QUEUE_SPACING_X_DESKTOP = 0.8;
 const UNIT_BLOCK_SIZE = 74;
 const SHOOTER_HIT_RADIUS = 88;
 const CARD_HITBOX_PADDING_X = 26;
@@ -303,6 +315,8 @@ const RAILWAY_PATH_NORMALIZED = {
   // Tuned to the visual center of the lane in ui/railway.png.
   r: 50 / RAILWAY_SOURCE_SIZE.w,
 };
+// Chicken sprite is authored facing +X (to the right), where the beak is drawn.
+const CHICKEN_FRONT_ANGLE_OFFSET = Math.PI * 0.5;
 const VICTORY_ZOOM_TARGET = 1.12;
 const VICTORY_ZOOM_SPEED = 3.2;
 const VICTORY_CONFETTI_DURATION = 1.8;
@@ -389,15 +403,27 @@ const DEBUG_DEFAULTS = {
   shotBounceSpeed: 1,
   trackUnitSpeed: 980,
   queueCardCount: 7,
+  chickenSizeScale: 1,
   topPanelFontSize: 67,
   topLevelPanelScale: 1.2,
   topCoinsPanelScale: 1.2,
   backButtonScale: 1.2,
-  trackYOffset: 50,
+  trackYOffset: 42,
+  trackYOffsetMobile: -33,
   playfieldScale: 0.88,
-  slotSizeScale: 1.15,
-  slotYOffset: -63,
+  slotSizeScale: 1.12,
+  slotYOffset: -72,
+  slotSpacingXMobile: 1.03,
+  slotSpacingXDesktop: 0.88,
+  trayBottomOffset: 82,
+  trayBottomOffsetDesktop: 60,
+  trayScaleYMobile: 1.14,
+  trayScaleYDesktop: 1.05,
+  queueSpacingXMobile: 1,
+  queueSpacingXDesktop: 0.8,
   topUiYOffset: 65,
+  topUiYOffsetMobile: 35,
+  mobileBottomClusterYOffset: -42,
   cardYOffsetAll: -72,
   cardYOffset1: 60,
   cardYOffset2: 7,
@@ -520,6 +546,15 @@ const BLOCK_COLOR_LABELS = {
   white: "белый",
   yellow: "жёлтый",
   red: "красный",
+};
+
+const CHICKEN_SPRITE_SOURCE_BY_COLOR = {
+  green: "ui/green_chicken 1.png",
+  black: "ui/black 1.png",
+  blue: "ui/blue_chicken 1.png",
+  white: "ui/white_chicken 1.png",
+  yellow: "ui/chicken 2.png",
+  red: "ui/red_chicken 1.png",
 };
 
 const DEBUG_IMAGE_LEVEL_ID = "debug-image-level";
@@ -1096,6 +1131,7 @@ class Unit {
     this.scaleY = 1;
     this.parkBounce = 0;
     this.shotBounceTime = SHOT_BOUNCE_DURATION;
+    this.renderRotation = null;
     this.alive = true;
   }
 
@@ -1131,6 +1167,7 @@ class Unit {
         this.state = "moving";
         this.position = this.conveyor.pointAtDistance(this.distanceOnTrack);
         this.prevPosition = { ...this.position };
+        this.renderRotation = game.getTrackSideFacingAngle(this.position);
         game.normalizeShooterQueues(game.cards);
       }
     } else if (this.state === "landing") {
@@ -1277,7 +1314,7 @@ class SlotManager {
     }
     return {
       x: slot.x + slot.w * 0.5,
-      y: slot.y + slot.h * 0.5 + 10,
+      y: slot.y + slot.h * 0.5,
     };
   }
 }
@@ -1616,7 +1653,7 @@ class CardManager {
   getCardPigCenter(card) {
     return {
       x: card.x + card.w / 2,
-      y: card.y + card.h / 2 + 8,
+      y: card.y + card.h / 2,
     };
   }
 
@@ -1634,7 +1671,15 @@ class CardManager {
   isPointOnCard(card, x, y) {
     const center = this.getCardPigCenter(card);
     const onPig = Math.hypot(x - center.x, y - center.y) <= SHOOTER_HIT_RADIUS;
-    return onPig;
+    const onCardRect =
+      x >= card.x - CARD_HITBOX_PADDING_X &&
+      x <= card.x + card.w + CARD_HITBOX_PADDING_X &&
+      y >= card.y - CARD_HITBOX_PADDING_TOP &&
+      y <= card.y + card.h + CARD_HITBOX_PADDING_BOTTOM;
+    if (card.row === 0) {
+      return onCardRect;
+    }
+    return onPig || onCardRect;
   }
 
   findTapTarget(x, y) {
@@ -1689,6 +1734,9 @@ class Game {
     this.woodImage = new Image();
     this.woodImage.src = "ui/wood.png";
     this.woodImage.decoding = "sync";
+    this.slotCellImage = new Image();
+    this.slotCellImage.src = "ui/Rectangle 4686.png";
+    this.slotCellImage.decoding = "sync";
     this.railwayImage = new Image();
     this.railwayImage.src = "ui/railway.png";
     this.railwayImage.decoding = "sync";
@@ -1709,7 +1757,10 @@ class Game {
       grassPattern: null,
       dirtPattern: null,
       woodPattern: null,
+      chickenByColor: {},
     };
+    this.chickenSpriteImageByColor = {};
+    this.initChickenSpriteImages();
 
     const staticSceneLayer = createBufferCanvas(this.width, this.height, false);
     this.staticSceneLayer = staticSceneLayer.canvas;
@@ -1805,6 +1856,8 @@ class Game {
     this.railSpeedValue = document.getElementById("railSpeedValue");
     this.queueCardsInput = document.getElementById("queueCards");
     this.queueCardsValue = document.getElementById("queueCardsValue");
+    this.chickenSizeScaleInput = document.getElementById("chickenSizeScale");
+    this.chickenSizeScaleValue = document.getElementById("chickenSizeScaleValue");
     this.topPanelFontSizeInput = document.getElementById("topPanelFontSize");
     this.topPanelFontSizeValue = document.getElementById("topPanelFontSizeValue");
     this.levelPanelScaleInput = document.getElementById("levelPanelScale");
@@ -1815,14 +1868,36 @@ class Game {
     this.backButtonScaleValue = document.getElementById("backButtonScaleValue");
     this.trackYOffsetInput = document.getElementById("trackYOffset");
     this.trackYOffsetValue = document.getElementById("trackYOffsetValue");
+    this.trackYOffsetMobileInput = document.getElementById("trackYOffsetMobile");
+    this.trackYOffsetMobileValue = document.getElementById("trackYOffsetMobileValue");
     this.playfieldScaleInput = document.getElementById("playfieldScale");
     this.playfieldScaleValue = document.getElementById("playfieldScaleValue");
     this.slotSizeScaleInput = document.getElementById("slotSizeScale");
     this.slotSizeScaleValue = document.getElementById("slotSizeScaleValue");
     this.slotYOffsetInput = document.getElementById("slotYOffset");
     this.slotYOffsetValue = document.getElementById("slotYOffsetValue");
+    this.slotSpacingXMobileInput = document.getElementById("slotSpacingXMobile");
+    this.slotSpacingXMobileValue = document.getElementById("slotSpacingXMobileValue");
+    this.slotSpacingXDesktopInput = document.getElementById("slotSpacingXDesktop");
+    this.slotSpacingXDesktopValue = document.getElementById("slotSpacingXDesktopValue");
+    this.trayBottomOffsetInput = document.getElementById("trayBottomOffset");
+    this.trayBottomOffsetValue = document.getElementById("trayBottomOffsetValue");
+    this.trayBottomOffsetDesktopInput = document.getElementById("trayBottomOffsetDesktop");
+    this.trayBottomOffsetDesktopValue = document.getElementById("trayBottomOffsetDesktopValue");
+    this.trayScaleYMobileInput = document.getElementById("trayScaleYMobile");
+    this.trayScaleYMobileValue = document.getElementById("trayScaleYMobileValue");
+    this.trayScaleYDesktopInput = document.getElementById("trayScaleYDesktop");
+    this.trayScaleYDesktopValue = document.getElementById("trayScaleYDesktopValue");
+    this.queueSpacingXMobileInput = document.getElementById("queueSpacingXMobile");
+    this.queueSpacingXMobileValue = document.getElementById("queueSpacingXMobileValue");
+    this.queueSpacingXDesktopInput = document.getElementById("queueSpacingXDesktop");
+    this.queueSpacingXDesktopValue = document.getElementById("queueSpacingXDesktopValue");
     this.topUiYOffsetInput = document.getElementById("topUiYOffset");
     this.topUiYOffsetValue = document.getElementById("topUiYOffsetValue");
+    this.topUiYOffsetMobileInput = document.getElementById("topUiYOffsetMobile");
+    this.topUiYOffsetMobileValue = document.getElementById("topUiYOffsetMobileValue");
+    this.mobileBottomClusterYOffsetInput = document.getElementById("mobileBottomClusterYOffset");
+    this.mobileBottomClusterYOffsetValue = document.getElementById("mobileBottomClusterYOffsetValue");
     this.cardAllYOffsetInput = document.getElementById("cardAllYOffset");
     this.cardAllYOffsetValue = document.getElementById("cardAllYOffsetValue");
     this.card1YOffsetInput = document.getElementById("card1YOffset");
@@ -1869,6 +1944,10 @@ class Game {
       this.rebuildStaticSceneLayer();
       this.invalidate(false);
     };
+    this.slotCellImage.onload = () => {
+      this.rebuildStaticSceneLayer();
+      this.invalidate(false);
+    };
     this.railwayImage.onload = () => {
       this.rebuildStaticSceneLayer();
       this.invalidate(false);
@@ -1894,6 +1973,14 @@ class Game {
     this.sprites.whiteTile = this.createBlockSprite("white");
     this.sprites.yellowTile = this.createBlockSprite("yellow");
     this.sprites.redTile = this.createBlockSprite("red");
+    this.sprites.chickenByColor = {};
+    for (const color of Object.keys(BLOCK_COLOR_CONFIG)) {
+      const imageSprite = this.chickenSpriteImageByColor[color];
+      this.sprites.chickenByColor[color] =
+        imageSprite && imageSprite.complete && imageSprite.naturalWidth > 0 && imageSprite.naturalHeight > 0
+          ? imageSprite
+          : this.createChickenSprite(color);
+    }
     this.sprites.holeTile = null;
     this.sprites.fieldGround = null;
     this.sprites.wagon = null;
@@ -1912,6 +1999,19 @@ class Game {
     );
     this.sprites.woodPattern = this.createWoodPatternTile();
     this.rebuildStaticSceneLayer();
+  }
+
+  initChickenSpriteImages() {
+    for (const [color, src] of Object.entries(CHICKEN_SPRITE_SOURCE_BY_COLOR)) {
+      const image = new Image();
+      image.decoding = "sync";
+      image.src = src;
+      image.onload = () => {
+        this.sprites.chickenByColor[color] = image;
+        this.invalidate(false);
+      };
+      this.chickenSpriteImageByColor[color] = image;
+    }
   }
 
   createBlockSprite(color) {
@@ -1944,6 +2044,175 @@ class Game {
     roundedRect(tileCtx, 0.5, 0.5, size - 1, size - 1, Math.max(3, Math.round(size * 0.18)) - 0.5);
     tileCtx.stroke();
     return tile;
+  }
+
+  createChickenSprite(color) {
+    const palette = getBlockColorConfig(color).sprite;
+    const width = 220;
+    const height = 220;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) {
+      return null;
+    }
+    ctx.imageSmoothingEnabled = true;
+
+    const bodyX = 42;
+    const bodyY = 54;
+    const bodyW = 136;
+    const bodyH = 118;
+    const wingW = 46;
+    const wingH = 36;
+    const wingY = bodyY + 26;
+    const legW = 20;
+    const legH = 26;
+    const legY = bodyY + bodyH - 3;
+
+    // Soft drop shadow under character.
+    ctx.save();
+    const shadowGrad = ctx.createRadialGradient(width * 0.5, bodyY + bodyH + 28, 10, width * 0.5, bodyY + bodyH + 28, 62);
+    shadowGrad.addColorStop(0, "rgba(0,0,0,0.22)");
+    shadowGrad.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.ellipse(width * 0.5, bodyY + bodyH + 28, 62, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Crest (behind body top edge).
+    const crestW = 20;
+    const crestH = 24;
+    const crestX = bodyX + bodyW * 0.5 - crestW * 0.5;
+    const crestY = bodyY - 20;
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.22)";
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 3;
+    const crestGrad = ctx.createLinearGradient(0, crestY, 0, crestY + crestH);
+    crestGrad.addColorStop(0, "#ff5e5e");
+    crestGrad.addColorStop(0.55, "#ff3f3f");
+    crestGrad.addColorStop(1, "#d82222");
+    ctx.fillStyle = crestGrad;
+    roundedRect(ctx, crestX, crestY, crestW, crestH, 6);
+    ctx.fill();
+    ctx.restore();
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 1.4;
+    roundedRect(ctx, crestX + 0.7, crestY + 0.7, crestW - 1.4, crestH - 1.4, 4.8);
+    ctx.stroke();
+
+    // Wings behind body.
+    const wingGrad = ctx.createLinearGradient(0, wingY, 0, wingY + wingH);
+    wingGrad.addColorStop(0, palette.base);
+    wingGrad.addColorStop(0.5, palette.mid);
+    wingGrad.addColorStop(1, palette.dark);
+    const drawWing = (x) => {
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.16)";
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = wingGrad;
+      roundedRect(ctx, x, wingY, wingW, wingH, 9);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      roundedRect(ctx, x + 2, wingY + 2, wingW - 4, 10, 6);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.28)";
+      ctx.lineWidth = 1;
+      roundedRect(ctx, x + 0.6, wingY + 0.6, wingW - 1.2, wingH - 1.2, 8.4);
+      ctx.stroke();
+    };
+    drawWing(bodyX - wingW + 9);
+    drawWing(bodyX + bodyW - 9);
+
+    // Single front beak (front direction marker).
+    const beakW = 18;
+    const beakH = 16;
+    const beakX = bodyX + bodyW - 2;
+    const beakY = bodyY + bodyH * 0.5 - beakH * 0.5;
+    const beakGrad = ctx.createLinearGradient(beakX, beakY, beakX + beakW, beakY + beakH);
+    beakGrad.addColorStop(0, "#ffb249");
+    beakGrad.addColorStop(0.6, "#ff8b21");
+    beakGrad.addColorStop(1, "#f66a12");
+    ctx.fillStyle = beakGrad;
+    roundedRect(ctx, beakX, beakY, beakW, beakH, 5);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.26)";
+    roundedRect(ctx, beakX + 1.5, beakY + 1.5, beakW - 3, 5, 3);
+    ctx.fill();
+
+    // Legs.
+    const legGrad = ctx.createLinearGradient(0, legY, 0, legY + legH);
+    legGrad.addColorStop(0, "#ff8f26");
+    legGrad.addColorStop(0.55, "#ff671a");
+    legGrad.addColorStop(1, "#f44b11");
+    const drawLeg = (x) => {
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.2)";
+      ctx.shadowBlur = 4;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = legGrad;
+      roundedRect(ctx, x, legY, legW, legH, 5);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = "rgba(255,255,255,0.32)";
+      roundedRect(ctx, x + 1.4, legY + 1.4, legW - 2.8, 6, 3);
+      ctx.fill();
+    };
+    drawLeg(bodyX + 30);
+    drawLeg(bodyX + bodyW - 30 - legW);
+
+    // Main body (plastic volume).
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 5;
+    const bodyGrad = ctx.createLinearGradient(bodyX, bodyY, bodyX, bodyY + bodyH);
+    bodyGrad.addColorStop(0, palette.base);
+    bodyGrad.addColorStop(0.32, palette.mid);
+    bodyGrad.addColorStop(0.76, palette.mid);
+    bodyGrad.addColorStop(1, palette.dark);
+    ctx.fillStyle = bodyGrad;
+    roundedRect(ctx, bodyX, bodyY, bodyW, bodyH, 14);
+    ctx.fill();
+    ctx.restore();
+
+    // Top glossy strip.
+    const topGloss = ctx.createLinearGradient(0, bodyY + 2, 0, bodyY + 24);
+    topGloss.addColorStop(0, "rgba(255,255,255,0.44)");
+    topGloss.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = topGloss;
+    roundedRect(ctx, bodyX + 4, bodyY + 3, bodyW - 8, 18, 8);
+    ctx.fill();
+
+    // Side inner highlights + bottom shade for bevel feel.
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    roundedRect(ctx, bodyX + 4, bodyY + 10, 8, bodyH - 24, 5);
+    ctx.fill();
+    roundedRect(ctx, bodyX + bodyW - 12, bodyY + 10, 8, bodyH - 24, 5);
+    ctx.fill();
+    const bottomShade = ctx.createLinearGradient(0, bodyY + bodyH - 26, 0, bodyY + bodyH);
+    bottomShade.addColorStop(0, "rgba(0,0,0,0)");
+    bottomShade.addColorStop(1, "rgba(0,0,0,0.2)");
+    ctx.fillStyle = bottomShade;
+    roundedRect(ctx, bodyX + 2, bodyY + bodyH - 24, bodyW - 4, 22, 7);
+    ctx.fill();
+
+    // Frame stroke like original.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.52)";
+    roundedRect(ctx, bodyX + 0.9, bodyY + 0.9, bodyW - 1.8, bodyH - 1.8, 13.1);
+    ctx.stroke();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.22)";
+    roundedRect(ctx, bodyX + 2, bodyY + 2, bodyW - 4, bodyH - 4, 11.8);
+    ctx.stroke();
+
+    return canvas;
   }
 
   createBackdropPattern(fillColor, palette, shadeDark) {
@@ -2010,7 +2279,6 @@ class Game {
     this.staticSceneCtx.clearRect(0, 0, this.width, this.height);
     this.drawBackground(this.staticSceneCtx);
     this.drawWagonLayer(this.staticSceneCtx);
-    this.drawBottomCleanup(this.staticSceneCtx);
     this.drawSlotState(this.staticSceneCtx);
   }
 
@@ -2113,25 +2381,29 @@ class Game {
     } else {
       drawW = drawH * imageAspect;
     }
-    const drawX = Math.round(frameRect.x + (frameRect.w - drawW) * 0.5);
-    const drawY = Math.round(frameRect.y + (frameRect.h - drawH) * 0.5);
-    const pixelW = Math.max(1, Math.round(drawW));
-    const pixelH = Math.max(1, Math.round(drawH));
+    const drawX = frameRect.x + (frameRect.w - drawW) * 0.5;
+    const drawY = frameRect.y + (frameRect.h - drawH) * 0.5;
 
     ctx.save();
     const prevSmoothing = ctx.imageSmoothingEnabled;
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(image, drawX, drawY, pixelW, pixelH);
+    const prevSmoothingQuality = ctx.imageSmoothingQuality;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(image, drawX, drawY, drawW, drawH);
+    ctx.imageSmoothingQuality = prevSmoothingQuality;
     ctx.imageSmoothingEnabled = prevSmoothing;
     ctx.restore();
     return true;
   }
 
   getBottomQueueUnderlayRect() {
+    const activeCards = Array.isArray(this.cards) ? this.cards.filter((card) => card && !card.used) : [];
     const queueCards =
-      this.cardManager && Array.isArray(this.cardManager.cardLayouts) && this.cardManager.cardLayouts.length > 0
-        ? this.cardManager.cardLayouts
-        : LAYOUT.cards;
+      activeCards.length > 0
+        ? activeCards
+        : this.cardManager && Array.isArray(this.cardManager.cardLayouts) && this.cardManager.cardLayouts.length > 0
+          ? this.cardManager.cardLayouts
+          : LAYOUT.cards;
     const elements = [...LAYOUT.slots, ...queueCards];
     if (!elements.length) {
       return null;
@@ -2152,25 +2424,43 @@ class Game {
       return null;
     }
 
-    const padX = 24;
-    const padTop = 20;
-    const padBottom = 30;
-    const x = clamp(Math.floor(minX - padX), 0, this.width);
-    const y = clamp(Math.floor(minY - padTop), 0, this.height);
-    const right = clamp(Math.ceil(maxX + padX), 0, this.width);
-    const bottom = clamp(Math.ceil(maxY + padBottom), 0, this.height);
+    const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
+    const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
+    const isPortrait = vh >= vw;
+    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
+    const useMobileTrayTuning = isMobileLike && isPortrait;
+
+    const padX = useMobileTrayTuning ? 20 : 24;
+    const padTop = useMobileTrayTuning ? 26 : 20;
+    const padBottom = useMobileTrayTuning ? 28 : 30;
+    const rawY = Math.floor(minY - padTop);
+    const rawBottom = Math.ceil(maxY + padBottom);
+    const y = useMobileTrayTuning ? rawY : clamp(rawY, 0, this.height);
+    const safeScale = Math.max(0.0001, this.viewportScale || 1);
+    const visibleWorldBottom = (this.screenHeight - this.viewportOffsetY) / safeScale;
+    const viewportOverflowBottom = Math.max(0, visibleWorldBottom - this.height);
+    const mobileBottomTarget = this.height + viewportOverflowBottom + TRAY_BOTTOM_OFFSET;
+    const desktopBottomTarget = rawBottom + TRAY_BOTTOM_OFFSET_DESKTOP;
+    const bottom = useMobileTrayTuning ? mobileBottomTarget : desktopBottomTarget;
+    // Portrait mobile: add small side overscan so the textured wood fully reaches screen edges.
+    const mobileSideOverscan = useMobileTrayTuning ? 24 : 0;
+    const x = useMobileTrayTuning ? -mobileSideOverscan : clamp(Math.floor(minX - padX), 0, this.width);
+    const right = useMobileTrayTuning ? this.width + mobileSideOverscan : clamp(Math.ceil(maxX + padX), 0, this.width);
     const w = Math.max(0, right - x);
-    const h = Math.max(0, bottom - y);
+    const rawH = Math.max(1, bottom - y);
+    const trayScaleY = useMobileTrayTuning ? TRAY_SCALE_Y_MOBILE : TRAY_SCALE_Y_DESKTOP;
+    const h = Math.max(1, Math.round(rawH * trayScaleY));
+    const scaledY = bottom - h;
     if (w <= 0 || h <= 0) {
       return null;
     }
 
     return {
       x,
-      y,
+      y: scaledY,
       w,
       h,
-      r: Math.min(30, Math.floor(Math.min(w, h) * 0.16)),
+      r: Math.min(useMobileTrayTuning ? 58 : 30, Math.floor(Math.min(w, h) * (useMobileTrayTuning ? 0.26 : 0.16))),
     };
   }
 
@@ -2466,9 +2756,9 @@ class Game {
       return {
         playfieldScaleMul: 1.04 - compactness * 0.02,
         topUiYOffsetAdd: -8 - compactness * 6,
-        trackYOffsetAdd: 112 + compactness * 52,
-        slotYOffsetAdd: 182 + compactness * 68,
-        cardYOffsetAllAdd: 188 + compactness * 96,
+        trackYOffsetAdd: 58 + compactness * 30,
+        slotYOffsetAdd: 128 + compactness * 48,
+        cardYOffsetAllAdd: 138 + compactness * 70,
         cardOffsetMul: 0.62,
         cardLaneSpacingMul: 0.82,
         backButtonScaleMul: 0.94,
@@ -2493,14 +2783,32 @@ class Game {
     };
   }
 
+  isMobilePortraitViewport() {
+    const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
+    const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
+    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
+    return isMobileLike && vh >= vw;
+  }
+
+  isMobileLikeViewport() {
+    const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
+    return vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
+  }
+
   applyDebugLayout() {
     const tuning = this.getViewportAdaptiveTuning();
-    const effectiveTopUiYOffset = TOP_UI_Y_OFFSET + tuning.topUiYOffsetAdd;
-    const effectiveTrackYOffset = TRACK_Y_OFFSET + tuning.trackYOffsetAdd;
+    const isMobilePortrait = this.isMobilePortraitViewport();
+    const isMobileLike = this.isMobileLikeViewport();
+    const baseTopUiYOffset = isMobileLike ? TOP_UI_Y_OFFSET_MOBILE : TOP_UI_Y_OFFSET;
+    const effectiveTopUiYOffset = baseTopUiYOffset + tuning.topUiYOffsetAdd;
+    const baseTrackYOffset = isMobileLike ? TRACK_Y_OFFSET_MOBILE : TRACK_Y_OFFSET;
+    const effectiveTrackYOffset = baseTrackYOffset + tuning.trackYOffsetAdd;
     const effectiveSlotYOffset = SLOT_Y_OFFSET + tuning.slotYOffsetAdd;
     const effectiveCardYOffsetAll = CARD_Y_OFFSET_ALL + tuning.cardYOffsetAllAdd;
     const effectiveCardOffsetMul = tuning.cardOffsetMul;
-    const effectiveCardLaneSpacingMul = tuning.cardLaneSpacingMul;
+    const effectiveQueueSpacingX = isMobileLike ? QUEUE_SPACING_X_MOBILE : QUEUE_SPACING_X_DESKTOP;
+    const effectiveCardLaneSpacingMul = tuning.cardLaneSpacingMul * effectiveQueueSpacingX;
+    const effectiveSlotSpacingX = isMobileLike ? SLOT_SPACING_X_MOBILE : SLOT_SPACING_X_DESKTOP;
     const effectivePlayfieldScale = PLAYFIELD_SCALE * tuning.playfieldScaleMul;
     const effectiveBackButtonScale = BACK_BUTTON_SCALE * tuning.backButtonScaleMul;
     const effectiveTopLevelPanelScale = TOP_LEVEL_PANEL_SCALE * tuning.topLevelPanelScaleMul;
@@ -2556,7 +2864,8 @@ class Game {
       }
       const w = Math.max(90, Math.round(baseSlot.w * SLOT_SIZE_SCALE));
       const h = Math.max(72, Math.round(baseSlot.h * SLOT_SIZE_SCALE));
-      const centerX = baseSlot.x + baseSlot.w * 0.5;
+      const baseCenterX = baseSlot.x + baseSlot.w * 0.5;
+      const centerX = baseFieldCenterX + (baseCenterX - baseFieldCenterX) * effectiveSlotSpacingX;
       const centerY = baseSlot.y + baseSlot.h * 0.5 + effectiveSlotYOffset;
       slot.w = w;
       slot.h = h;
@@ -2569,6 +2878,57 @@ class Game {
       x: Math.round(baseFieldCenterX + (baseCard.x + baseCard.w * 0.5 - baseFieldCenterX) * effectiveCardLaneSpacingMul - baseCard.w * 0.5),
       y: Math.round(baseCard.y + effectiveCardYOffsetAll + getCardYOffsetByIndex(index) * effectiveCardOffsetMul),
     }));
+
+    if (isMobilePortrait) {
+      // Match reference: top 4 tray slots are empty; queue birds start below in a 2-column stack.
+      const mobileCardW = 146;
+      const mobileCardH = 184;
+      const trayCenterX =
+        LAYOUT.slots.length > 0
+          ? LAYOUT.slots.reduce((sum, slot) => sum + slot.x + slot.w * 0.5, 0) / LAYOUT.slots.length
+          : this.width * 0.5;
+      const slotsBottom = LAYOUT.slots.length > 0 ? Math.max(...LAYOUT.slots.map((slot) => slot.y + slot.h)) : 1240;
+      const colGap = 196 * effectiveQueueSpacingX;
+      const colCenters = [trayCenterX - colGap * 0.5, trayCenterX + colGap * 0.5];
+      const firstRowY = Math.round(slotsBottom + 4);
+      const rowGap = 124;
+      for (let i = 0; i < dynamicCardLayouts.length; i += 1) {
+        const card = dynamicCardLayouts[i];
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        card.lane = col;
+        card.row = row;
+        card.w = mobileCardW;
+        card.h = mobileCardH;
+        card.x = Math.round(colCenters[col] - mobileCardW * 0.5);
+        card.y = Math.round(firstRowY + row * rowGap);
+      }
+
+      const maxBottom = Math.max(
+        ...LAYOUT.slots.map((slot) => slot.y + slot.h),
+        ...dynamicCardLayouts.map((card) => card.y + card.h)
+      );
+      const targetBottom = this.height + TRAY_BOTTOM_OFFSET;
+      const shiftY = Math.round(targetBottom - maxBottom);
+      if (Math.abs(shiftY) >= 1) {
+        for (const slot of LAYOUT.slots) {
+          slot.y += shiftY;
+        }
+        for (const card of dynamicCardLayouts) {
+          card.y += shiftY;
+        }
+      }
+      if (Math.abs(MOBILE_BOTTOM_CLUSTER_Y_OFFSET) >= 1) {
+        const mobileShiftY = Math.round(MOBILE_BOTTOM_CLUSTER_Y_OFFSET);
+        for (const slot of LAYOUT.slots) {
+          slot.y += mobileShiftY;
+        }
+        for (const card of dynamicCardLayouts) {
+          card.y += mobileShiftY;
+        }
+      }
+    }
+
     this.cardManager.setBaseLayouts(dynamicCardLayouts);
     this.cardManager.setQueueCardCount(this.cardManager.queueCardCount);
     this.cards = this.cardManager.normalizeQueues(this.cards);
@@ -2654,15 +3014,27 @@ class Game {
       shotBounceSpeed: SHOT_BOUNCE_SPEED,
       trackUnitSpeed: TRACK_UNIT_SPEED,
       queueCardCount: BOTTOM_QUEUE_CARD_COUNT,
+      chickenSizeScale: CHICKEN_SIZE_SCALE,
       topPanelFontSize: TOP_PANEL_FONT_SIZE,
       topLevelPanelScale: TOP_LEVEL_PANEL_SCALE,
       topCoinsPanelScale: TOP_COINS_PANEL_SCALE,
       backButtonScale: BACK_BUTTON_SCALE,
       trackYOffset: TRACK_Y_OFFSET,
+      trackYOffsetMobile: TRACK_Y_OFFSET_MOBILE,
       playfieldScale: PLAYFIELD_SCALE,
       slotSizeScale: SLOT_SIZE_SCALE,
       slotYOffset: SLOT_Y_OFFSET,
+      slotSpacingXMobile: SLOT_SPACING_X_MOBILE,
+      slotSpacingXDesktop: SLOT_SPACING_X_DESKTOP,
+      trayBottomOffset: TRAY_BOTTOM_OFFSET,
+      trayBottomOffsetDesktop: TRAY_BOTTOM_OFFSET_DESKTOP,
+      trayScaleYMobile: TRAY_SCALE_Y_MOBILE,
+      trayScaleYDesktop: TRAY_SCALE_Y_DESKTOP,
+      queueSpacingXMobile: QUEUE_SPACING_X_MOBILE,
+      queueSpacingXDesktop: QUEUE_SPACING_X_DESKTOP,
       topUiYOffset: TOP_UI_Y_OFFSET,
+      topUiYOffsetMobile: TOP_UI_Y_OFFSET_MOBILE,
+      mobileBottomClusterYOffset: MOBILE_BOTTOM_CLUSTER_Y_OFFSET,
       cardYOffsetAll: CARD_Y_OFFSET_ALL,
       cardYOffset1: CARD_Y_OFFSET_1,
       cardYOffset2: CARD_Y_OFFSET_2,
@@ -2682,15 +3054,35 @@ class Game {
       MIN_QUEUE_CARDS,
       MAX_QUEUE_CARDS
     );
+    CHICKEN_SIZE_SCALE = clamp(Number(settings.chickenSizeScale ?? DEBUG_DEFAULTS.chickenSizeScale), 0.6, 1.8);
     TOP_PANEL_FONT_SIZE = clamp(Number(settings.topPanelFontSize ?? DEBUG_DEFAULTS.topPanelFontSize), 24, 80);
     TOP_LEVEL_PANEL_SCALE = clamp(Number(settings.topLevelPanelScale ?? DEBUG_DEFAULTS.topLevelPanelScale), 0.6, 1.8);
     TOP_COINS_PANEL_SCALE = clamp(Number(settings.topCoinsPanelScale ?? DEBUG_DEFAULTS.topCoinsPanelScale), 0.6, 1.8);
     BACK_BUTTON_SCALE = clamp(Number(settings.backButtonScale ?? DEBUG_DEFAULTS.backButtonScale), 0.6, 1.8);
     TRACK_Y_OFFSET = clamp(Number(settings.trackYOffset ?? DEBUG_DEFAULTS.trackYOffset), -220, 260);
+    TRACK_Y_OFFSET_MOBILE = clamp(Number(settings.trackYOffsetMobile ?? DEBUG_DEFAULTS.trackYOffsetMobile), -220, 260);
     PLAYFIELD_SCALE = clamp(Number(settings.playfieldScale ?? DEBUG_DEFAULTS.playfieldScale), 0.7, 1.5);
     SLOT_SIZE_SCALE = clamp(Number(settings.slotSizeScale ?? DEBUG_DEFAULTS.slotSizeScale), 0.6, 1.7);
     SLOT_Y_OFFSET = clamp(Number(settings.slotYOffset ?? DEBUG_DEFAULTS.slotYOffset), -220, 260);
+    SLOT_SPACING_X_MOBILE = clamp(Number(settings.slotSpacingXMobile ?? DEBUG_DEFAULTS.slotSpacingXMobile), 0.6, 1.8);
+    SLOT_SPACING_X_DESKTOP = clamp(Number(settings.slotSpacingXDesktop ?? DEBUG_DEFAULTS.slotSpacingXDesktop), 0.6, 1.8);
+    TRAY_BOTTOM_OFFSET = clamp(Number(settings.trayBottomOffset ?? DEBUG_DEFAULTS.trayBottomOffset), -320, 320);
+    TRAY_BOTTOM_OFFSET_DESKTOP = clamp(
+      Number(settings.trayBottomOffsetDesktop ?? DEBUG_DEFAULTS.trayBottomOffsetDesktop),
+      -320,
+      320
+    );
+    TRAY_SCALE_Y_MOBILE = clamp(Number(settings.trayScaleYMobile ?? DEBUG_DEFAULTS.trayScaleYMobile), 0.5, 1.8);
+    TRAY_SCALE_Y_DESKTOP = clamp(Number(settings.trayScaleYDesktop ?? DEBUG_DEFAULTS.trayScaleYDesktop), 0.5, 1.8);
+    QUEUE_SPACING_X_MOBILE = clamp(Number(settings.queueSpacingXMobile ?? DEBUG_DEFAULTS.queueSpacingXMobile), 0.6, 1.8);
+    QUEUE_SPACING_X_DESKTOP = clamp(Number(settings.queueSpacingXDesktop ?? DEBUG_DEFAULTS.queueSpacingXDesktop), 0.6, 1.8);
     TOP_UI_Y_OFFSET = clamp(Number(settings.topUiYOffset ?? DEBUG_DEFAULTS.topUiYOffset), -60, 220);
+    TOP_UI_Y_OFFSET_MOBILE = clamp(Number(settings.topUiYOffsetMobile ?? DEBUG_DEFAULTS.topUiYOffsetMobile), -60, 220);
+    MOBILE_BOTTOM_CLUSTER_Y_OFFSET = clamp(
+      Number(settings.mobileBottomClusterYOffset ?? DEBUG_DEFAULTS.mobileBottomClusterYOffset),
+      -220,
+      220
+    );
     CARD_Y_OFFSET_ALL = clamp(Number(settings.cardYOffsetAll ?? DEBUG_DEFAULTS.cardYOffsetAll), -260, 260);
     CARD_Y_OFFSET_1 = clamp(Number(settings.cardYOffset1 ?? DEBUG_DEFAULTS.cardYOffset1), -260, 260);
     CARD_Y_OFFSET_2 = clamp(Number(settings.cardYOffset2 ?? DEBUG_DEFAULTS.cardYOffset2), -260, 260);
@@ -3027,15 +3419,27 @@ class Game {
       [this.shotBounceSpeedInput, SHOT_BOUNCE_SPEED],
       [this.railSpeedInput, TRACK_UNIT_SPEED],
       [this.queueCardsInput, BOTTOM_QUEUE_CARD_COUNT],
+      [this.chickenSizeScaleInput, CHICKEN_SIZE_SCALE],
       [this.topPanelFontSizeInput, TOP_PANEL_FONT_SIZE],
       [this.levelPanelScaleInput, TOP_LEVEL_PANEL_SCALE],
       [this.coinsPanelScaleInput, TOP_COINS_PANEL_SCALE],
       [this.backButtonScaleInput, BACK_BUTTON_SCALE],
       [this.trackYOffsetInput, TRACK_Y_OFFSET],
+      [this.trackYOffsetMobileInput, TRACK_Y_OFFSET_MOBILE],
       [this.playfieldScaleInput, PLAYFIELD_SCALE],
       [this.slotSizeScaleInput, SLOT_SIZE_SCALE],
       [this.slotYOffsetInput, SLOT_Y_OFFSET],
+      [this.slotSpacingXMobileInput, SLOT_SPACING_X_MOBILE],
+      [this.slotSpacingXDesktopInput, SLOT_SPACING_X_DESKTOP],
+      [this.trayBottomOffsetInput, TRAY_BOTTOM_OFFSET],
+      [this.trayBottomOffsetDesktopInput, TRAY_BOTTOM_OFFSET_DESKTOP],
+      [this.trayScaleYMobileInput, TRAY_SCALE_Y_MOBILE],
+      [this.trayScaleYDesktopInput, TRAY_SCALE_Y_DESKTOP],
+      [this.queueSpacingXMobileInput, QUEUE_SPACING_X_MOBILE],
+      [this.queueSpacingXDesktopInput, QUEUE_SPACING_X_DESKTOP],
       [this.topUiYOffsetInput, TOP_UI_Y_OFFSET],
+      [this.topUiYOffsetMobileInput, TOP_UI_Y_OFFSET_MOBILE],
+      [this.mobileBottomClusterYOffsetInput, MOBILE_BOTTOM_CLUSTER_Y_OFFSET],
       [this.cardAllYOffsetInput, CARD_Y_OFFSET_ALL],
       [this.card1YOffsetInput, CARD_Y_OFFSET_1],
       [this.card2YOffsetInput, CARD_Y_OFFSET_2],
@@ -3193,6 +3597,7 @@ class Game {
     unit.distanceOnTrack = this.conveyor.spawnDistance;
     unit.cooldown = 0;
     unit.parkBounce = 0;
+    unit.renderRotation = null;
     unit.prevPosition = { ...unit.position };
     this.invalidate(true);
     return true;
@@ -3323,6 +3728,35 @@ class Game {
       x: LAYOUT.fieldX + (LAYOUT.fieldCols * LAYOUT.fieldStep) / 2,
       y: LAYOUT.fieldY + (LAYOUT.fieldRows * LAYOUT.fieldStep) / 2,
     };
+  }
+
+  getTrackSideFacingAngle(point) {
+    const trackRect = this.conveyor?.trackRect;
+    if (!trackRect) {
+      return CHICKEN_FRONT_ANGLE_OFFSET;
+    }
+    const left = trackRect.x;
+    const right = trackRect.x + trackRect.w;
+    const top = trackRect.y;
+    const bottom = trackRect.y + trackRect.h;
+    const distances = [
+      { side: "top", value: Math.abs(point.y - top) },
+      { side: "bottom", value: Math.abs(point.y - bottom) },
+      { side: "left", value: Math.abs(point.x - left) },
+      { side: "right", value: Math.abs(point.x - right) },
+    ];
+    distances.sort((a, b) => a.value - b.value);
+    const closestSide = distances[0].side;
+    if (closestSide === "bottom") {
+      return -Math.PI * 0.5 + CHICKEN_FRONT_ANGLE_OFFSET;
+    }
+    if (closestSide === "right") {
+      return Math.PI + CHICKEN_FRONT_ANGLE_OFFSET;
+    }
+    if (closestSide === "left") {
+      return CHICKEN_FRONT_ANGLE_OFFSET;
+    }
+    return Math.PI * 0.5 + CHICKEN_FRONT_ANGLE_OFFSET;
   }
 
   getInwardShootDirection(sourcePoint) {
@@ -4204,11 +4638,21 @@ class Game {
       ctx.save();
       ctx.translate(drawX, drawY);
       ctx.scale(shotScale, shotScale);
-      ctx.translate(-drawX, -drawY);
       if (unit.state === "moving") {
-        this.drawUnitBlock(ctx, drawX, drawY, UNIT_BLOCK_SIZE, unit.color, 1);
-        this.drawAmmoOnBlock(ctx, drawX, drawY, unit.ammo, 30);
-      } else {
+        const targetAngle = this.getTrackSideFacingAngle(unit.position);
+        const currentAngle = Number.isFinite(unit.renderRotation)
+          ? unit.renderRotation
+          : targetAngle;
+        const delta = Math.atan2(
+          Math.sin(targetAngle - currentAngle),
+          Math.cos(targetAngle - currentAngle)
+        );
+        const nextAngle = currentAngle + delta * 0.22;
+        unit.renderRotation = nextAngle;
+        ctx.rotate(nextAngle);
+      }
+      ctx.translate(-drawX, -drawY);
+      if (!this.drawUnitChicken(ctx, unit)) {
         this.drawUnitBlock(ctx, drawX, drawY, UNIT_BLOCK_SIZE, unit.color, 1);
         this.drawAmmoOnBlock(ctx, drawX, drawY, unit.ammo, 30);
       }
@@ -4218,19 +4662,23 @@ class Game {
 
   drawSlotState(ctx) {
     for (const slot of LAYOUT.slots) {
-      const size = Math.min(slot.w, slot.h);
-      const x = slot.x + (slot.w - size) * 0.5;
-      const y = slot.y + (slot.h - size) * 0.5;
+      const image = this.slotCellImage;
+      const fitSize = Math.round(Math.min(slot.w, slot.h) * 0.9);
+      const drawX = Math.round(slot.x + (slot.w - fitSize) * 0.5);
+      const drawY = Math.round(slot.y + (slot.h - fitSize) * 0.5);
+      if (image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+        ctx.save();
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(image, drawX, drawY, fitSize, fitSize);
+        ctx.restore();
+        continue;
+      }
+
       ctx.save();
-      ctx.fillStyle = "rgba(17, 24, 14, 0.22)";
-      roundedRect(ctx, x + 2, y + 5, size, size, 14);
+      ctx.fillStyle = "rgba(85, 49, 27, 0.8)";
+      roundedRect(ctx, drawX, drawY, fitSize, fitSize, Math.round(fitSize * 0.16));
       ctx.fill();
-      roundedRect(ctx, x, y, size, size, 14);
-      ctx.fillStyle = "rgba(20, 26, 32, 0.62)";
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.14)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
       ctx.restore();
     }
   }
@@ -4256,33 +4704,21 @@ class Game {
       return;
     }
 
-    ctx.save();
-    roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
-    ctx.clip();
-
-    const woodPatternTile = this.sprites.woodPattern;
-    const woodPattern = woodPatternTile ? ctx.createPattern(woodPatternTile, "repeat") : null;
-    if (woodPattern) {
-      ctx.fillStyle = woodPattern;
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    } else {
-      ctx.fillStyle = "#8f5127";
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    const woodImage = this.woodImage;
+    if (woodImage && woodImage.complete && woodImage.naturalWidth > 0 && woodImage.naturalHeight > 0) {
+      ctx.save();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(woodImage, rect.x, rect.y, rect.w, rect.h);
+      ctx.restore();
+      return;
     }
 
-    const glaze = ctx.createLinearGradient(0, rect.y, 0, rect.y + rect.h);
-    glaze.addColorStop(0, "rgba(255, 255, 255, 0.12)");
-    glaze.addColorStop(0.42, "rgba(255, 255, 255, 0)");
-    glaze.addColorStop(1, "rgba(0, 0, 0, 0.2)");
-    ctx.fillStyle = glaze;
-    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-    ctx.restore();
-
+    // Fallback if image is not yet loaded.
     ctx.save();
-    roundedRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, Math.max(4, rect.r - 0.5));
-    ctx.strokeStyle = "rgba(49, 24, 12, 0.52)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+    ctx.fillStyle = "#8f5127";
+    ctx.fill();
     ctx.restore();
   }
 
@@ -4307,16 +4743,149 @@ class Game {
     ctx.restore();
   }
 
+  drawAmmoOnChicken(ctx, x, y, value, baseFontSize = 30) {
+    ctx.save();
+    const text = String(value);
+    const digits = text.length;
+    const fontSize = digits >= 4 ? Math.round(baseFontSize * 0.62) : digits === 3 ? Math.round(baseFontSize * 0.76) : baseFontSize;
+    ctx.font = `900 ${fontSize}px "Baloo 2", "Arial Rounded MT Bold", "Trebuchet MS", Arial, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#111111";
+    ctx.lineWidth = Math.max(5, Math.round(fontSize * 0.28));
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeText(text, x, y);
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  drawChickenSprite(ctx, centerX, centerY, color, ammo, options = {}) {
+    const colorKey = color && BLOCK_COLOR_CONFIG[color] ? color : "green";
+    const sprite = this.sprites.chickenByColor?.[colorKey];
+    if (!sprite || !sprite.width || !sprite.height) {
+      return false;
+    }
+    const size = Math.max(1, options.size ?? UNIT_BLOCK_SIZE * 1.25);
+    const scaleMul = Math.max(0.1, options.scaleMul ?? 1);
+    const anchorY = options.anchorY ?? 0.53;
+    const numberYRatio = options.numberYRatio ?? 0.44;
+    const fontBase = options.fontBase ?? 38;
+    const fitScale = Math.min((size * scaleMul) / sprite.width, (size * scaleMul) / sprite.height);
+    const drawW = sprite.width * fitScale;
+    const drawH = sprite.height * fitScale;
+    const drawX = centerX - drawW * 0.5;
+    const drawY = centerY - drawH * anchorY;
+    const numberY = drawY + drawH * numberYRatio;
+
+    ctx.save();
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    const prevSmoothingQuality = ctx.imageSmoothingQuality;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(sprite, drawX, drawY, drawW, drawH);
+    ctx.imageSmoothingQuality = prevSmoothingQuality;
+    ctx.imageSmoothingEnabled = prevSmoothing;
+
+    this.drawAmmoOnChicken(ctx, centerX, numberY, ammo, fontBase * scaleMul);
+    ctx.restore();
+    return true;
+  }
+
+  drawUnitChicken(ctx, unit) {
+    return this.drawChickenSprite(
+      ctx,
+      unit.position.x,
+      unit.position.y,
+      unit.color,
+      unit.ammo,
+      {
+        size: UNIT_BLOCK_SIZE * 1.95,
+        scaleMul: CHICKEN_SIZE_SCALE,
+        anchorY: 0.53,
+        numberYRatio: 0.452,
+        fontBase: 35,
+      }
+    );
+  }
+
+  drawQueueChicken(ctx, card, queueScale = 1) {
+    const center = this.getCardPigCenter(card);
+    const maxW = card.w * 0.9;
+    const maxH = card.h * 0.78;
+    const fitSize = Math.min(maxW, maxH) * Math.max(0.1, queueScale);
+    return this.drawChickenSprite(ctx, center.x, center.y, card.color, card.ammo, {
+      size: fitSize,
+      scaleMul: CHICKEN_SIZE_SCALE,
+      anchorY: 0.53,
+      numberYRatio: 0.452,
+      fontBase: 39,
+    });
+  }
+
+  drawFrontQueueCard(ctx, card, queueScale = 1) {
+    const centerX = card.x + card.w * 0.5;
+    const centerY = card.y + card.h * 0.5;
+    const scale = Math.max(0.1, queueScale);
+    const bodyW = card.w * 0.72 * scale;
+    const bodyH = card.h * 0.52 * scale;
+    const bodyX = centerX - bodyW * 0.5;
+    const bodyY = centerY - bodyH * 0.5 + card.h * 0.02;
+    const nubW = Math.max(12, bodyW * 0.13);
+    const nubH = Math.max(16, bodyH * 0.36);
+    const legW = Math.max(10, bodyW * 0.12);
+    const legH = Math.max(7, bodyH * 0.13);
+    const legY = bodyY + bodyH - 1;
+
+    ctx.save();
+
+    ctx.fillStyle = "#f0d05e";
+    roundedRect(ctx, bodyX - nubW + 4, centerY - nubH * 0.5, nubW, nubH, 7);
+    ctx.fill();
+    roundedRect(ctx, bodyX + bodyW - 4, centerY - nubH * 0.5, nubW, nubH, 7);
+    ctx.fill();
+
+    const grad = ctx.createLinearGradient(0, bodyY, 0, bodyY + bodyH);
+    grad.addColorStop(0, "#f9e889");
+    grad.addColorStop(0.48, "#f0d357");
+    grad.addColorStop(1, "#ddb63f");
+    ctx.fillStyle = grad;
+    roundedRect(ctx, bodyX, bodyY, bodyW, bodyH, 12);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.26)";
+    roundedRect(ctx, bodyX + 4, bodyY + 3, bodyW - 8, bodyH * 0.24, 7);
+    ctx.fill();
+
+    ctx.fillStyle = "#ef6b44";
+    roundedRect(ctx, bodyX + bodyW * 0.2 - legW * 0.5, legY, legW, legH, 3);
+    ctx.fill();
+    roundedRect(ctx, bodyX + bodyW * 0.8 - legW * 0.5, legY, legW, legH, 3);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(85, 49, 20, 0.35)";
+    ctx.lineWidth = 1.2;
+    roundedRect(ctx, bodyX + 0.6, bodyY + 0.6, bodyW - 1.2, bodyH - 1.2, 11.2);
+    ctx.stroke();
+
+    this.drawAmmoOnBlock(ctx, centerX, bodyY + bodyH * 0.56, card.ammo, 36 * scale);
+    ctx.restore();
+    return true;
+  }
+
   drawCardState(ctx) {
     const cardsToDraw = [...this.cards].sort((a, b) => a.row - b.row);
     for (const card of cardsToDraw) {
       if (card.used) {
         continue;
       }
-      const center = this.getCardPigCenter(card);
       const queueScale = clamp(card.queueScale || 1, 0.88, 1.12);
-      this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE * queueScale, card.color, 1);
-      this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30 * queueScale);
+      if (!this.drawQueueChicken(ctx, card, queueScale)) {
+        const center = this.getCardPigCenter(card);
+        this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE * queueScale, card.color, 1);
+        this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30 * queueScale);
+      }
     }
   }
 
@@ -5043,9 +5612,9 @@ class Game {
     } else {
       this.drawBackground(ctx);
       this.drawWagonLayer(ctx);
-      this.drawBottomCleanup(ctx);
-      this.drawSlotState(ctx);
     }
+    this.drawBottomCleanup(ctx);
+    this.drawSlotState(ctx);
     this.drawDestroyedBlocks(ctx);
     this.drawTargetSilhouette(ctx);
     this.drawProjectiles(ctx);
@@ -5778,6 +6347,18 @@ class Game {
       });
       this.queueCardsInput.dispatchEvent(new Event("input"));
     }
+    bindRange(
+      this.chickenSizeScaleInput,
+      this.chickenSizeScaleValue,
+      CHICKEN_SIZE_SCALE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        CHICKEN_SIZE_SCALE = clamp(value, 0.6, 1.8);
+        this.invalidate(false);
+        return CHICKEN_SIZE_SCALE;
+      }
+    );
 
     bindRange(
       this.topPanelFontSizeInput,
@@ -5841,6 +6422,18 @@ class Game {
       }
     );
     bindRange(
+      this.trackYOffsetMobileInput,
+      this.trackYOffsetMobileValue,
+      TRACK_Y_OFFSET_MOBILE,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TRACK_Y_OFFSET_MOBILE = clamp(value, -220, 260);
+        this.applyDebugLayout();
+        return TRACK_Y_OFFSET_MOBILE;
+      }
+    );
+    bindRange(
       this.playfieldScaleInput,
       this.playfieldScaleValue,
       PLAYFIELD_SCALE,
@@ -5877,6 +6470,102 @@ class Game {
       }
     );
     bindRange(
+      this.slotSpacingXMobileInput,
+      this.slotSpacingXMobileValue,
+      SLOT_SPACING_X_MOBILE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        SLOT_SPACING_X_MOBILE = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return SLOT_SPACING_X_MOBILE;
+      }
+    );
+    bindRange(
+      this.slotSpacingXDesktopInput,
+      this.slotSpacingXDesktopValue,
+      SLOT_SPACING_X_DESKTOP,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        SLOT_SPACING_X_DESKTOP = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return SLOT_SPACING_X_DESKTOP;
+      }
+    );
+    bindRange(
+      this.trayBottomOffsetInput,
+      this.trayBottomOffsetValue,
+      TRAY_BOTTOM_OFFSET,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TRAY_BOTTOM_OFFSET = clamp(value, -320, 320);
+        this.applyDebugLayout();
+        return TRAY_BOTTOM_OFFSET;
+      }
+    );
+    bindRange(
+      this.trayBottomOffsetDesktopInput,
+      this.trayBottomOffsetDesktopValue,
+      TRAY_BOTTOM_OFFSET_DESKTOP,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TRAY_BOTTOM_OFFSET_DESKTOP = clamp(value, -320, 320);
+        this.applyDebugLayout();
+        return TRAY_BOTTOM_OFFSET_DESKTOP;
+      }
+    );
+    bindRange(
+      this.trayScaleYMobileInput,
+      this.trayScaleYMobileValue,
+      TRAY_SCALE_Y_MOBILE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        TRAY_SCALE_Y_MOBILE = clamp(value, 0.5, 1.8);
+        this.applyDebugLayout();
+        return TRAY_SCALE_Y_MOBILE;
+      }
+    );
+    bindRange(
+      this.trayScaleYDesktopInput,
+      this.trayScaleYDesktopValue,
+      TRAY_SCALE_Y_DESKTOP,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        TRAY_SCALE_Y_DESKTOP = clamp(value, 0.5, 1.8);
+        this.applyDebugLayout();
+        return TRAY_SCALE_Y_DESKTOP;
+      }
+    );
+    bindRange(
+      this.queueSpacingXMobileInput,
+      this.queueSpacingXMobileValue,
+      QUEUE_SPACING_X_MOBILE,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        QUEUE_SPACING_X_MOBILE = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return QUEUE_SPACING_X_MOBILE;
+      }
+    );
+    bindRange(
+      this.queueSpacingXDesktopInput,
+      this.queueSpacingXDesktopValue,
+      QUEUE_SPACING_X_DESKTOP,
+      (value) => Number(value),
+      (value) => `${value.toFixed(2)}x`,
+      (value) => {
+        QUEUE_SPACING_X_DESKTOP = clamp(value, 0.6, 1.8);
+        this.applyDebugLayout();
+        return QUEUE_SPACING_X_DESKTOP;
+      }
+    );
+    bindRange(
       this.topUiYOffsetInput,
       this.topUiYOffsetValue,
       TOP_UI_Y_OFFSET,
@@ -5886,6 +6575,30 @@ class Game {
         TOP_UI_Y_OFFSET = clamp(value, -60, 220);
         this.applyDebugLayout();
         return TOP_UI_Y_OFFSET;
+      }
+    );
+    bindRange(
+      this.topUiYOffsetMobileInput,
+      this.topUiYOffsetMobileValue,
+      TOP_UI_Y_OFFSET_MOBILE,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        TOP_UI_Y_OFFSET_MOBILE = clamp(value, -60, 220);
+        this.applyDebugLayout();
+        return TOP_UI_Y_OFFSET_MOBILE;
+      }
+    );
+    bindRange(
+      this.mobileBottomClusterYOffsetInput,
+      this.mobileBottomClusterYOffsetValue,
+      MOBILE_BOTTOM_CLUSTER_Y_OFFSET,
+      (value) => Number(value),
+      (value) => String(Math.round(value)),
+      (value) => {
+        MOBILE_BOTTOM_CLUSTER_Y_OFFSET = clamp(value, -220, 220);
+        this.applyDebugLayout();
+        return MOBILE_BOTTOM_CLUSTER_Y_OFFSET;
       }
     );
     bindRange(
@@ -6067,6 +6780,17 @@ class Game {
       this.handlePointerDown(point.x, point.y);
       event.preventDefault();
     });
+    if (this.debugPanel) {
+      // Keep scroll gestures inside the debug panel so the canvas doesn't steal them on mobile.
+      const stopPropagation = (event) => {
+        event.stopPropagation();
+      };
+      this.debugPanel.addEventListener("pointerdown", stopPropagation, { passive: true });
+      this.debugPanel.addEventListener("pointermove", stopPropagation, { passive: true });
+      this.debugPanel.addEventListener("wheel", stopPropagation, { passive: true });
+      this.debugPanel.addEventListener("touchstart", stopPropagation, { passive: true });
+      this.debugPanel.addEventListener("touchmove", stopPropagation, { passive: true });
+    }
     if (this.debugButton) {
       this.debugButton.addEventListener("click", (event) => {
         this.triggerDebug6();

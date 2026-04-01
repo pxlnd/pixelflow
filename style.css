@@ -104,8 +104,8 @@ body {
 
 .debug-fab {
   position: absolute;
-  right: 12px;
-  bottom: 14px;
+  right: calc(env(safe-area-inset-right, 0) + 10px);
+  top: calc(env(safe-area-inset-top, 0) + 10px);
   z-index: 3;
   display: none;
   min-width: 56px;
@@ -134,7 +134,12 @@ body {
   font: 700 12px/1.15 Arial, sans-serif;
   padding: 10px 10px 10px;
   backdrop-filter: blur(4px);
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  pointer-events: auto;
   display: none;
 }
 
@@ -168,6 +173,45 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: rgba(255, 255, 255, 0.76);
+}
+
+.debug-subsection {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 6px 6px 8px;
+}
+
+.debug-subsection + .debug-subsection {
+  margin-top: 4px;
+}
+
+.debug-subsection-title {
+  cursor: pointer;
+  user-select: none;
+  font: 800 11px/1 Arial, sans-serif;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.9);
+  list-style: none;
+}
+
+.debug-subsection-title::-webkit-details-marker {
+  display: none;
+}
+
+.debug-subsection-title::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  opacity: 0.88;
+}
+
+.debug-subsection[open] .debug-subsection-title::before {
+  content: "▾";
+}
+
+.debug-subsection .debug-control {
+  margin-top: 6px;
 }
 
 .debug-control {
@@ -380,16 +424,24 @@ body {
   }
 
   .debug-panel {
+    position: fixed;
     top: auto;
-    left: 50%;
-    bottom: 10px;
-    transform: translate(-50%, calc(100% + 20px));
+    left: 0;
+    right: 0;
+    bottom: calc(-1 * min(72dvh, 600px) - 24px);
+    transform: none;
+    margin: 0 auto;
     width: min(96vw, 460px);
     min-width: 0;
-    max-height: min(70dvh, 560px);
+    height: min(72dvh, 600px);
+    max-height: min(72dvh, 600px);
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
   }
 
   .debug-panel.is-visible {
-    transform: translate(-50%, 0);
+    bottom: 10px;
+    transform: none;
   }
 }
