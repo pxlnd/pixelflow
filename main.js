@@ -1894,7 +1894,7 @@ class Game {
   buildSpiralOrderMap(cols, rows) {
     const orderByCell = new Map();
     const total = cols * rows;
-    let order = 0;
+    let visited = 0;
     let x = Math.floor((cols - 1) / 2);
     let y = Math.floor((rows - 1) / 2);
     const dirs = [
@@ -1904,7 +1904,7 @@ class Game {
       [0, 1],
     ];
 
-    const pushCell = (col, row) => {
+    const pushCell = (col, row, spiralIndex) => {
       if (col < 0 || row < 0 || col >= cols || row >= rows) {
         return;
       }
@@ -1912,26 +1912,33 @@ class Game {
       if (orderByCell.has(key)) {
         return;
       }
-      orderByCell.set(key, order);
-      order += 1;
+      orderByCell.set(key, spiralIndex);
+      visited += 1;
     };
 
-    pushCell(x, y);
+    pushCell(x, y, 0);
     let stepLength = 1;
     let dirIndex = 0;
-    while (order < total) {
+    let legIndex = 0;
+    let segmentIndex = 2;
+    while (visited < total) {
       for (let turn = 0; turn < 2; turn++) {
         const [dx, dy] = dirs[dirIndex % dirs.length];
+        const currentSegment = legIndex < 2 ? 1 : segmentIndex;
         for (let step = 0; step < stepLength; step++) {
           x += dx;
           y += dy;
-          pushCell(x, y);
-          if (order >= total) {
+          pushCell(x, y, currentSegment);
+          if (visited >= total) {
             break;
           }
         }
+        if (legIndex >= 2) {
+          segmentIndex += 1;
+        }
+        legIndex += 1;
         dirIndex += 1;
-        if (order >= total) {
+        if (visited >= total) {
           break;
         }
       }
@@ -2688,9 +2695,12 @@ class Game {
     return { forwardDistance, sideDistance };
   }
 
-  isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth) {
+  isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth, ignoreSpiralIndex = null) {
     for (const block of this.blocks) {
       if (!block.alive) {
+        continue;
+      }
+      if (ignoreSpiralIndex !== null && block.spiralIndex === ignoreSpiralIndex) {
         continue;
       }
       const hit = this.getLineHitForBlock(sourcePoint, direction, block, lineHalfWidth);
@@ -2705,57 +2715,85 @@ class Game {
   }
 
   getNextSpiralTarget() {
+    const targets = this.getNextSpiralTargets();
+    if (targets.length > 0) {
+      return targets[0];
+    }
+    return null;
+  }
+
+  getNextSpiralTargets() {
+    const targets = [];
+    let currentSpiralIndex = null;
     for (const block of this.blocksBySpiral) {
-      if (!block.alive) {
-        return block;
+      if (block.alive) {
+        continue;
+      }
+      if (currentSpiralIndex === null) {
+        currentSpiralIndex = block.spiralIndex;
+      }
+      if (block.spiralIndex !== currentSpiralIndex) {
+        break;
+      }
+      targets.push(block);
+    }
+    return targets;
+  }
+
+  getNextSpiralTargetForColor(color) {
+    const targets = this.getNextSpiralTargets();
+    for (const target of targets) {
+      if (target.color === color) {
+        return target;
       }
     }
     return null;
   }
 
-  getNextSpiralTargetForColor(color) {
-    const nextTarget = this.getNextSpiralTarget();
-    if (!nextTarget || nextTarget.color !== color) {
-      return null;
-    }
-    return nextTarget;
-  }
-
   canColorShootNextSpiralTarget(color) {
-    const target = this.getNextSpiralTargetForColor(color);
-    if (!target) {
+    const targets = this.getNextSpiralTargets().filter((target) => target.color === color);
+    if (targets.length === 0) {
       return false;
     }
-    const targetCenter = this.blockCenter(target);
-    const lineHalfWidth = LAYOUT.cellSize * 0.65;
-    const probes = [
-      {
-        sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
-        direction: { x: 1, y: 0 },
-      },
-      {
-        sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
-        direction: { x: -1, y: 0 },
-      },
-      {
-        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
-        direction: { x: 0, y: 1 },
-      },
-      {
-        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
-        direction: { x: 0, y: -1 },
-      },
-    ];
 
-    for (const probe of probes) {
-      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
-      if (!hit) {
-        continue;
+    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    for (const target of targets) {
+      const targetCenter = this.blockCenter(target);
+      const probes = [
+        {
+          sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
+          direction: { x: 1, y: 0 },
+        },
+        {
+          sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
+          direction: { x: -1, y: 0 },
+        },
+        {
+          sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
+          direction: { x: 0, y: 1 },
+        },
+        {
+          sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
+          direction: { x: 0, y: -1 },
+        },
+      ];
+
+      for (const probe of probes) {
+        const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
+        if (!hit) {
+          continue;
+        }
+        if (this.isPathBlockedByPlacedBlocks(
+          probe.sourcePoint,
+          probe.direction,
+          hit.forwardDistance,
+          lineHalfWidth * 0.9,
+          target.spiralIndex
+        )) {
+          continue;
+        }
+        return true;
       }
-      if (this.isPathBlockedByPlacedBlocks(probe.sourcePoint, probe.direction, hit.forwardDistance, lineHalfWidth * 0.9)) {
-        continue;
-      }
-      return true;
     }
 
     return false;
@@ -2763,18 +2801,34 @@ class Game {
 
   findTargetOnLine(sourcePoint, color, direction) {
     const lineHalfWidth = LAYOUT.cellSize * 0.65;
-    const nextSpiralTarget = this.getNextSpiralTargetForColor(color);
-    if (!nextSpiralTarget) {
+    const targets = this.getNextSpiralTargets().filter((target) => target.color === color);
+    if (targets.length === 0) {
       return null;
     }
-    const targetHit = this.getLineHitForBlock(sourcePoint, direction, nextSpiralTarget, lineHalfWidth);
-    if (!targetHit) {
-      return null;
+
+    let bestTarget = null;
+    let bestDistance = Infinity;
+    for (const target of targets) {
+      const hit = this.getLineHitForBlock(sourcePoint, direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (this.isPathBlockedByPlacedBlocks(
+        sourcePoint,
+        direction,
+        hit.forwardDistance,
+        lineHalfWidth * 0.9,
+        target.spiralIndex
+      )) {
+        continue;
+      }
+      if (hit.forwardDistance < bestDistance) {
+        bestDistance = hit.forwardDistance;
+        bestTarget = target;
+      }
     }
-    if (this.isPathBlockedByPlacedBlocks(sourcePoint, direction, targetHit.forwardDistance, lineHalfWidth * 0.9)) {
-      return null;
-    }
-    return nextSpiralTarget;
+
+    return bestTarget;
   }
 
   hasTargetForColor(color) {
@@ -3386,51 +3440,45 @@ class Game {
   }
 
   drawTargetSilhouette(ctx) {
-    const nextBlock = this.getNextSpiralTarget();
-    if (!nextBlock) {
+    const targets = this.getNextSpiralTargets();
+    if (targets.length === 0) {
       return;
     }
 
     const now = performance.now();
     const pulseFast = 0.5 + 0.5 * Math.sin(now * 0.018);
     const pulseSlow = 0.5 + 0.5 * Math.sin(now * 0.009 + 1.3);
-    const accentColor = getBlockColorConfig(nextBlock.color).accentRgb;
 
-    ctx.save();
-    ctx.globalAlpha = 0.2 + pulseSlow * 0.24;
-    ctx.shadowColor = `rgba(${accentColor}, 0.95)`;
-    ctx.shadowBlur = 20 + pulseFast * 14;
-    ctx.fillStyle = `rgba(${accentColor}, 0.28)`;
-    roundedRect(
-      ctx,
-      nextBlock.x - 4,
-      nextBlock.y - 4,
-      nextBlock.size + 8,
-      nextBlock.size + 8,
-      11
-    );
-    ctx.fill();
-    ctx.restore();
+    for (const target of targets) {
+      const accentColor = getBlockColorConfig(target.color).accentRgb;
+      const centerX = target.x + target.size * 0.5;
+      const centerY = target.y + target.size * 0.5;
+      const pulseScale = 1 + 0.12 * pulseFast;
 
-    this.drawVolumetricBlock(ctx, nextBlock, nextBlock.x, nextBlock.y, {
-      alpha: 0.62,
-      shadowOpacity: 0.28,
-      bevelStrength: 0.24,
-    });
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(pulseScale, pulseScale);
+      ctx.translate(-centerX, -centerY);
 
-    ctx.save();
-    ctx.globalAlpha = 0.62 + pulseFast * 0.35;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = `rgba(${accentColor}, 0.98)`;
-    roundedRect(ctx, nextBlock.x + 2, nextBlock.y + 2, nextBlock.size - 4, nextBlock.size - 4, 7);
-    ctx.stroke();
+      this.drawVolumetricBlock(ctx, target, target.x, target.y, {
+        alpha: 0.72 + pulseSlow * 0.28,
+        shadowOpacity: 0.28 + pulseFast * 0.2,
+        bevelStrength: 0.28 + pulseSlow * 0.16,
+      });
 
-    ctx.globalAlpha = 0.4 + pulseSlow * 0.4;
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(20, 40, 70, 0.88)";
-    roundedRect(ctx, nextBlock.x - 2, nextBlock.y - 2, nextBlock.size + 4, nextBlock.size + 4, 9);
-    ctx.stroke();
-    ctx.restore();
+      ctx.globalAlpha = 0.78 + pulseFast * 0.22;
+      ctx.lineWidth = 2.5 + pulseFast * 1.5;
+      ctx.strokeStyle = `rgba(${accentColor}, 0.98)`;
+      roundedRect(ctx, target.x + 2, target.y + 2, target.size - 4, target.size - 4, 7);
+      ctx.stroke();
+
+      ctx.globalAlpha = 0.38 + pulseSlow * 0.3;
+      ctx.lineWidth = 1.5 + pulseFast;
+      ctx.strokeStyle = "rgba(20, 40, 70, 0.9)";
+      roundedRect(ctx, target.x - 1, target.y - 1, target.size + 2, target.size + 2, 8);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   drawLevelStartFade(ctx) {
