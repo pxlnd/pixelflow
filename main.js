@@ -13,6 +13,7 @@ const LEVEL_REGISTRY = window.PIXELFLOW_LEVELS || {
 const BUILTIN_FALLBACK_LEVEL = {
   id: "1",
   name: "Level 1",
+  queueCardCount: 7,
   fallbackFieldPattern: [
     "GGGGGGGGGGGGGGGGGG",
     "GGGGGGGGGGGGGGGGGG",
@@ -109,9 +110,11 @@ const THEME_DEFINITIONS = Array.isArray(THEME_REGISTRY.THEME_DEFINITIONS) ? THEM
 let DEFAULT_LEVEL_ID = BUILTIN_FALLBACK_LEVEL.id;
 const DEFAULT_THEME_ID = String(THEME_REGISTRY.DEFAULT_THEME_ID || BUILTIN_FALLBACK_THEME.id);
 const LEVEL_DEFINITIONS_FALLBACK = Array.isArray(LEVEL_REGISTRY.LEVEL_DEFINITIONS) ? LEVEL_REGISTRY.LEVEL_DEFINITIONS : [];
+const LEVEL_OVERRIDES_STORAGE_KEY = "pixelflow.level.overrides.v1";
 const getLevelConfigRaw = typeof LEVEL_REGISTRY.getLevelConfig === "function" ? LEVEL_REGISTRY.getLevelConfig : () => null;
 const getThemeConfigRaw = typeof THEME_REGISTRY.getThemeConfig === "function" ? THEME_REGISTRY.getThemeConfig : () => null;
 let LEVEL_MAP = new Map();
+let LEVEL_OVERRIDES_MAP = new Map();
 
 function rebuildLevelRegistry(levelDefinitions) {
   LEVEL_DEFINITIONS = Array.isArray(levelDefinitions) ? levelDefinitions.filter(isValidLevelConfig) : [];
@@ -133,6 +136,75 @@ function upsertLevelDefinition(levelConfig) {
     LEVEL_DEFINITIONS.push(normalized);
   }
   LEVEL_MAP.set(levelId, normalized);
+}
+
+function getLevelOverridesStoragePayload() {
+  const levels = {};
+  for (const [id, level] of LEVEL_OVERRIDES_MAP.entries()) {
+    levels[id] = level;
+  }
+  return {
+    updatedAt: new Date().toISOString(),
+    levels,
+  };
+}
+
+function saveLevelOverridesToStorage() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return false;
+  }
+  try {
+    const payload = getLevelOverridesStoragePayload();
+    window.localStorage.setItem(LEVEL_OVERRIDES_STORAGE_KEY, JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function loadLevelOverridesFromStorage() {
+  LEVEL_OVERRIDES_MAP = new Map();
+  if (typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+  let parsed = null;
+  try {
+    const raw = window.localStorage.getItem(LEVEL_OVERRIDES_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const source = parsed && typeof parsed === "object" ? parsed.levels : null;
+  if (!source || typeof source !== "object") {
+    return;
+  }
+  for (const value of Object.values(source)) {
+    if (!isValidLevelConfig(value)) {
+      continue;
+    }
+    const normalized = cloneData(value);
+    normalized.id = String(normalized.id || "");
+    LEVEL_OVERRIDES_MAP.set(normalized.id, normalized);
+  }
+}
+
+function applyLoadedLevelOverrides() {
+  for (const level of LEVEL_OVERRIDES_MAP.values()) {
+    upsertLevelDefinition(level);
+  }
+}
+
+function persistLevelOverride(levelConfig) {
+  if (!isValidLevelConfig(levelConfig)) {
+    return false;
+  }
+  const normalized = cloneData(levelConfig);
+  normalized.id = String(normalized.id || "");
+  LEVEL_OVERRIDES_MAP.set(normalized.id, normalized);
+  return saveLevelOverridesToStorage();
 }
 
 function isValidLevelConfig(config) {
@@ -405,6 +477,7 @@ const BLOCK_CHAR_TO_COLOR = {
   G: "green",
   B: "black",
   K: "black",
+  C: "blue",
   W: "white",
   Y: "yellow",
   R: "red",
@@ -416,6 +489,7 @@ const BLOCK_CHAR_TO_COLOR = {
 const BLOCK_COLOR_TO_PATTERN_CHAR = {
   green: "G",
   black: "K",
+  blue: "C",
   white: "W",
   yellow: "Y",
   red: "R",
@@ -424,6 +498,7 @@ const BLOCK_COLOR_TO_PATTERN_CHAR = {
 const BLOCK_COLOR_TO_RGB = {
   green: { r: 129, g: 195, b: 65 },
   black: { r: 42, g: 42, b: 42 },
+  blue: { r: 86, g: 194, b: 241 },
   white: { r: 245, g: 247, b: 251 },
   yellow: { r: 255, g: 215, b: 64 },
   red: { r: 239, g: 64, b: 50 },
@@ -432,6 +507,7 @@ const BLOCK_COLOR_TO_RGB = {
 const BLOCK_COLOR_LABELS = {
   green: "зелёный",
   black: "чёрный",
+  blue: "голубой",
   white: "белый",
   yellow: "жёлтый",
   red: "красный",
@@ -477,6 +553,23 @@ const BLOCK_COLOR_CONFIG = {
     slotBurst: "rgba(255, 235, 140, 0.7)",
     particle: "#161616",
     accentRgb: "255, 255, 255",
+  },
+  blue: {
+    styleKeys: ["sky", "mint"],
+    sprite: { base: "#67cdf6", mid: "#49afe4", dark: "#2f8cc2" },
+    face: "#58c2f1",
+    projectile: {
+      core: "#2c9fda",
+      light: "#b7ecff",
+      glowMid: "rgba(113,213,255,0.24)",
+      glowEnd: "rgba(164,231,255,0.58)",
+      auraInner: "rgba(202,242,255,0.82)",
+      auraMid: "rgba(96,194,238,0.34)",
+    },
+    ring: "rgba(128, 219, 255, 0.9)",
+    slotBurst: "rgba(131, 223, 255, 0.76)",
+    particle: "#4bb4e8",
+    accentRgb: "114, 214, 255",
   },
   white: {
     styleKeys: ["pearl", "cloud"],
@@ -585,6 +678,88 @@ function getNearestBlockColor(r, g, b) {
   return bestColor;
 }
 
+function getLuma(r, g, b) {
+  return r * 0.2126 + g * 0.7152 + b * 0.0722;
+}
+
+function getHueDegrees(r, g, b) {
+  const nr = r / 255;
+  const ng = g / 255;
+  const nb = b / 255;
+  const max = Math.max(nr, ng, nb);
+  const min = Math.min(nr, ng, nb);
+  const delta = max - min;
+  if (delta <= 0.00001) {
+    return null;
+  }
+  let hue = 0;
+  if (max === nr) {
+    hue = ((ng - nb) / delta) % 6;
+  } else if (max === ng) {
+    hue = (nb - nr) / delta + 2;
+  } else {
+    hue = (nr - ng) / delta + 4;
+  }
+  hue *= 60;
+  if (hue < 0) {
+    hue += 360;
+  }
+  return hue;
+}
+
+function pickSampledBlockColor(r, g, b, a) {
+  if (a < 56) {
+    return null;
+  }
+  const alpha = Math.max(1, a);
+  const unpremulR = clamp((r * 255) / alpha, 0, 255);
+  const unpremulG = clamp((g * 255) / alpha, 0, 255);
+  const unpremulB = clamp((b * 255) / alpha, 0, 255);
+  const maxChannel = Math.max(unpremulR, unpremulG, unpremulB);
+  const minChannel = Math.min(unpremulR, unpremulG, unpremulB);
+  const chroma = maxChannel - minChannel;
+  const luma = getLuma(unpremulR, unpremulG, unpremulB);
+  const saturation = maxChannel > 0 ? chroma / maxChannel : 0;
+
+  if (luma <= 58) {
+    return "black";
+  }
+  if (chroma <= 22) {
+    return luma >= 148 ? "white" : "black";
+  }
+  if (luma >= 226 && saturation <= 0.36) {
+    return "white";
+  }
+  if (luma >= 190 && saturation <= 0.62) {
+    return "white";
+  }
+  if (luma >= 168 && saturation <= 0.3) {
+    return "white";
+  }
+
+  const hue = getHueDegrees(unpremulR, unpremulG, unpremulB);
+  if (hue !== null) {
+    if (hue >= 175 && hue <= 235) {
+      return "blue";
+    }
+    if (hue >= 80 && hue <= 165 && saturation >= 0.22) {
+      return "green";
+    }
+    if (hue >= 25 && hue <= 70 && saturation >= 0.2) {
+      return "yellow";
+    }
+    if ((hue >= 345 || hue <= 15) && saturation >= 0.2) {
+      return "red";
+    }
+  }
+
+  if (luma >= 170) {
+    return "white";
+  }
+
+  return getNearestBlockColor(unpremulR, unpremulG, unpremulB);
+}
+
 let CURRENT_LEVEL = getLevelConfig(DEFAULT_LEVEL_ID);
 let CURRENT_THEME = getThemeConfig(DEFAULT_THEME_ID);
 let LAYOUT = cloneLevelLayout(CURRENT_LEVEL.layout);
@@ -624,6 +799,12 @@ function createBaseLayout(layout) {
 
 function syncLevelGlobals(levelConfig) {
   CURRENT_LEVEL = cloneData(levelConfig);
+  BOTTOM_QUEUE_CARD_COUNT = clamp(
+    Math.round(Number(CURRENT_LEVEL?.queueCardCount ?? BOTTOM_QUEUE_CARD_COUNT)),
+    MIN_QUEUE_CARDS,
+    MAX_QUEUE_CARDS
+  );
+  CURRENT_LEVEL.queueCardCount = BOTTOM_QUEUE_CARD_COUNT;
   LAYOUT = cloneLevelLayout(CURRENT_LEVEL.layout);
   BASE_LAYOUT = createBaseLayout(LAYOUT);
   FALLBACK_FIELD_PATTERN = [...(CURRENT_LEVEL.fallbackFieldPattern || [])];
@@ -1483,6 +1664,7 @@ class Game {
       holeTile: null,
       greenTile: null,
       blackTile: null,
+      blueTile: null,
       fieldGround: null,
       wagon: null,
       wagonMask: null,
@@ -1555,6 +1737,9 @@ class Game {
     this.debugImageLevelSection = document.getElementById("debugImageLevelSection");
     this.debugLevelSelect = document.getElementById("debugLevelSelect");
     this.debugThemeSelect = document.getElementById("debugThemeSelect");
+    this.debugLevelPrevTopButton = document.getElementById("debugLevelPrevTop");
+    this.debugLevelNextTopButton = document.getElementById("debugLevelNextTop");
+    this.debugLevelTopLabel = document.getElementById("debugLevelTopLabel");
     this.debugImageUploadInput = document.getElementById("debugImageUpload");
     this.debugImageFileName = document.getElementById("debugImageFileName");
     this.debugImageGridColsInput = document.getElementById("debugImageGridCols");
@@ -1566,6 +1751,14 @@ class Game {
     this.debugImageCreateButton = document.getElementById("debugImageCreate");
     this.debugImageRefreshButton = document.getElementById("debugImageRefresh");
     this.debugImageStatus = document.getElementById("debugImageStatus");
+    this.debugSaveLevelNumberInput = document.getElementById("debugSaveLevelNumber");
+    this.debugSaveLevelNameInput = document.getElementById("debugSaveLevelName");
+    this.debugSaveCurrentLevelButton = document.getElementById("debugSaveCurrentLevel");
+    this.debugSaveTargetLevelButton = document.getElementById("debugSaveTargetLevel");
+    this.debugPickLevelsFolderButton = document.getElementById("debugPickLevelsFolder");
+    this.debugPaintModeInput = document.getElementById("debugPaintMode");
+    this.debugPaintToolSelect = document.getElementById("debugPaintTool");
+    this.debugPaintColorSelect = document.getElementById("debugPaintColor");
     this.shotBounceSizeInput = document.getElementById("shotBounceSize");
     this.shotBounceSizeValue = document.getElementById("shotBounceSizeValue");
     this.shotBounceSpeedInput = document.getElementById("shotBounceSpeed");
@@ -1607,6 +1800,13 @@ class Game {
     this.debugContentSelectorsBound = false;
     this.debugGeneratedSourceImage = null;
     this.debugGeneratedBaseLevelId = DEFAULT_LEVEL_ID;
+    this.debugLevelsDirHandle = null;
+    this.debugLevelsDirName = "";
+    this.debugSaveTargetDirty = false;
+    this.debugPaintModeEnabled = false;
+    this.debugPaintTool = "paint";
+    this.debugPaintColor = "blue";
+    this.debugPaintHoverCell = null;
 
     this.loadDebugSettings();
     this.initDebugControls();
@@ -1638,6 +1838,7 @@ class Game {
   buildReferenceAssets() {
     this.sprites.greenTile = this.createBlockSprite("green");
     this.sprites.blackTile = this.createBlockSprite("black");
+    this.sprites.blueTile = this.createBlockSprite("blue");
     this.sprites.whiteTile = this.createBlockSprite("white");
     this.sprites.yellowTile = this.createBlockSprite("yellow");
     this.sprites.redTile = this.createBlockSprite("red");
@@ -1749,10 +1950,13 @@ class Game {
     }
     this.blockFieldCtx.clearRect(0, 0, this.width, this.height);
     for (const block of this.blocks) {
+      if (!block.alive) {
+        continue;
+      }
       this.drawVolumetricBlock(this.blockFieldCtx, block, block.x, block.y, {
-        alpha: block.alive ? 0.96 : 0.24,
-        shadowOpacity: block.alive ? 0.22 : 0.12,
-        bevelStrength: block.alive ? 0.26 : 0.14,
+        alpha: 0.96,
+        shadowOpacity: 0.22,
+        bevelStrength: 0.26,
         offsetY: 0,
       });
     }
@@ -2134,6 +2338,15 @@ class Game {
     this.blocksBySpiral = [];
     this.setWagonIdle();
     this.applyDebugLayout();
+    if (this.queueCardsInput) {
+      this.queueCardsInput.value = String(BOTTOM_QUEUE_CARD_COUNT);
+    }
+    if (this.queueCardsValue) {
+      const text = String(BOTTOM_QUEUE_CARD_COUNT);
+      this.queueCardsValue.value = text;
+      this.queueCardsValue.textContent = text;
+    }
+    this.syncDebugPaintColorOptions();
     if (restart) {
       this.restart();
     }
@@ -2282,21 +2495,6 @@ class Game {
     }
   }
 
-  getCurrentLevelExport() {
-    const levelNumber = this.getSuggestedExportLevelNumber();
-    const level = cloneData(CURRENT_LEVEL);
-    level.id = String(levelNumber);
-    level.name = `Level ${levelNumber}`;
-    if (level.pixelArt && typeof level.pixelArt === "object") {
-      level.pixelArt.id = `level-${levelNumber}-art`;
-    }
-    return {
-      exportedAt: new Date().toISOString(),
-      levelNumber,
-      level,
-    };
-  }
-
   getSuggestedExportLevelNumber() {
     if (isPositiveIntegerString(this.currentLevelId)) {
       return Number(this.currentLevelId);
@@ -2314,8 +2512,73 @@ class Game {
     return candidate;
   }
 
-  async exportCurrentLevelJSON() {
-    const payload = this.getCurrentLevelExport();
+  normalizeDebugLevelNumber(value, fallback = this.getSuggestedExportLevelNumber()) {
+    const parsed = Number(String(value ?? "").trim());
+    if (!Number.isFinite(parsed)) {
+      return fallback;
+    }
+    return clamp(Math.round(parsed), 1, 9999);
+  }
+
+  getDebugSaveLevelNumber(fallback = this.getSuggestedExportLevelNumber()) {
+    const levelNumber = this.normalizeDebugLevelNumber(this.debugSaveLevelNumberInput?.value, fallback);
+    if (this.debugSaveLevelNumberInput) {
+      this.debugSaveLevelNumberInput.value = String(levelNumber);
+    }
+    return levelNumber;
+  }
+
+  getDebugSaveLevelName(levelNumber) {
+    const raw = String(this.debugSaveLevelNameInput?.value || "").trim();
+    const name = raw.length > 0 ? raw : `Level ${levelNumber}`;
+    if (this.debugSaveLevelNameInput) {
+      this.debugSaveLevelNameInput.value = name;
+    }
+    return name;
+  }
+
+  syncDebugSaveTargetInputs(preferredLevelId = this.currentLevelId, options = {}) {
+    const { force = false } = options;
+    if (this.debugSaveTargetDirty && !force) {
+      return;
+    }
+    const effectiveId =
+      String(preferredLevelId || "") === DEBUG_IMAGE_LEVEL_ID
+        ? this.debugGeneratedBaseLevelId
+        : preferredLevelId;
+    const numericId = isPositiveIntegerString(effectiveId) ? Number(effectiveId) : this.getSuggestedExportLevelNumber();
+    if (this.debugSaveLevelNumberInput) {
+      this.debugSaveLevelNumberInput.value = String(numericId);
+    }
+    if (this.debugSaveLevelNameInput) {
+      const currentName = String(this.debugSaveLevelNameInput.value || "").trim();
+      const isGeneric = /^level\s+\d+$/i.test(currentName);
+      if (!currentName || isGeneric) {
+        this.debugSaveLevelNameInput.value = `Level ${numericId}`;
+      }
+    }
+  }
+
+  buildCurrentLevelExport(levelNumber, levelName) {
+    const level = cloneData(CURRENT_LEVEL);
+    level.id = String(levelNumber);
+    level.name = String(levelName || `Level ${levelNumber}`);
+    level.queueCardCount = clamp(
+      Math.round(Number(this.cardManager?.queueCardCount ?? BOTTOM_QUEUE_CARD_COUNT)),
+      MIN_QUEUE_CARDS,
+      MAX_QUEUE_CARDS
+    );
+    if (level.pixelArt && typeof level.pixelArt === "object") {
+      level.pixelArt.id = `level-${levelNumber}-art`;
+    }
+    return {
+      exportedAt: new Date().toISOString(),
+      levelNumber,
+      level,
+    };
+  }
+
+  async downloadLevelPayload(payload) {
     const json = `${JSON.stringify(payload, null, 2)}\n`;
     const fileName = `${payload.levelNumber}.json`;
     const blob = new Blob([json], { type: "application/json" });
@@ -2337,16 +2600,153 @@ class Game {
         copied = false;
       }
     }
+    return { copied, json };
+  }
 
+  async pickDebugLevelsFolder() {
+    if (typeof window.showDirectoryPicker !== "function") {
+      this.setDebugImageStatus(
+        "Запись в папку недоступна в этом режиме (обычно file://). Запусти через localhost или используй кнопку 'уровень json'.",
+        "error"
+      );
+      return false;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: "readwrite" });
+      this.debugLevelsDirHandle = handle;
+      this.debugLevelsDirName = String(handle?.name || "");
+      this.setDebugImageStatus(
+        `Папка выбрана: ${this.debugLevelsDirName || "(без имени)"}. Следующие сохранения пишутся туда.`,
+        "success"
+      );
+      return true;
+    } catch {
+      this.setDebugImageStatus("Выбор папки отменён.", "error");
+      return false;
+    }
+  }
+
+  async writeLevelPayloadToPickedFolder(payload) {
+    if (!this.debugLevelsDirHandle) {
+      return false;
+    }
+    const json = `${JSON.stringify(payload, null, 2)}\n`;
+    try {
+      const fileHandle = await this.debugLevelsDirHandle.getFileHandle(`${payload.levelNumber}.json`, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      const verifyHandle = await this.debugLevelsDirHandle.getFileHandle(`${payload.levelNumber}.json`, { create: false });
+      const verifyFile = await verifyHandle.getFile();
+      if (!verifyFile || verifyFile.size <= 0) {
+        return false;
+      }
+      return true;
+    } catch {
+      this.debugLevelsDirHandle = null;
+      this.debugLevelsDirName = "";
+      return false;
+    }
+  }
+
+  async saveCurrentLevelPayload(payload, { triggerButton = null, requireFolderWrite = true } = {}) {
+    let writtenToFolder = false;
+    if (requireFolderWrite) {
+      if (!this.debugLevelsDirHandle) {
+        const picked = await this.pickDebugLevelsFolder();
+        if (!picked) {
+          this.setDebugImageStatus("Сохранение отменено: папка уровней не выбрана.", "error");
+          return false;
+        }
+      }
+      writtenToFolder = await this.writeLevelPayloadToPickedFolder(payload);
+      if (!writtenToFolder) {
+        this.setDebugImageStatus("Не удалось записать файл в папку. Нажми 'папка уровней' и выбери её заново.", "error");
+        return false;
+      }
+    }
+
+    const persistedLocally = persistLevelOverride(payload.level);
+    upsertLevelDefinition(payload.level);
+    this.fillDebugContentSelectors();
+    this.applyLevelConfig(String(payload.levelNumber), { restart: true });
+    this.syncDebugContentSelectors();
+    this.debugSaveTargetDirty = false;
+    this.syncDebugSaveTargetInputs(String(payload.levelNumber), { force: true });
+
+    let copied = false;
+    if (!requireFolderWrite) {
+      const result = await this.downloadLevelPayload(payload);
+      copied = result.copied;
+    }
+
+    if (triggerButton) {
+      const original = triggerButton.textContent;
+      triggerButton.textContent = requireFolderWrite
+        ? "сохранено в папку"
+        : (copied ? "скачано+скопировано" : "скачано");
+      setTimeout(() => {
+        if (triggerButton) {
+          triggerButton.textContent = original || "сохранить";
+        }
+      }, 1500);
+    }
+
+    this.setDebugImageStatus(
+      requireFolderWrite
+        ? `Уровень ${payload.levelNumber} сохранён в папку '${this.debugLevelsDirName || "levels"}', обновлён в списке${persistedLocally ? " и закреплён после перезагрузки." : "."}`
+        : `Уровень ${payload.levelNumber} обновлён в списке${persistedLocally ? " и закреплён после перезагрузки." : "."} JSON скачан как ${payload.levelNumber}.json.`,
+      "success"
+    );
+    return true;
+  }
+
+  async saveOverCurrentLevel() {
+    const fallback = this.getSuggestedExportLevelNumber();
+    const targetLevelId =
+      String(this.currentLevelId || "") === DEBUG_IMAGE_LEVEL_ID
+        ? this.debugGeneratedBaseLevelId
+        : this.currentLevelId;
+    const levelNumber = this.normalizeDebugLevelNumber(targetLevelId, fallback);
+    if (!isPositiveIntegerString(targetLevelId)) {
+      this.setDebugImageStatus(
+        `Открыт служебный уровень (${this.currentLevelId}). Сохраняю в номер ${levelNumber}.`,
+        "info"
+      );
+    }
+    const levelName = String(CURRENT_LEVEL?.name || `Level ${levelNumber}`);
+    const payload = this.buildCurrentLevelExport(levelNumber, levelName);
+    await this.saveCurrentLevelPayload(payload, {
+      triggerButton: this.debugSaveCurrentLevelButton,
+      requireFolderWrite: true,
+    });
+  }
+
+  async saveToTargetLevel() {
+    const levelNumber = this.getDebugSaveLevelNumber();
+    const levelName = this.getDebugSaveLevelName(levelNumber);
+    const payload = this.buildCurrentLevelExport(levelNumber, levelName);
+    await this.saveCurrentLevelPayload(payload, {
+      triggerButton: this.debugSaveTargetLevelButton || this.debugExportLevelButton,
+      requireFolderWrite: true,
+    });
+  }
+
+  async exportCurrentLevelJSON() {
+    const levelNumber = this.getDebugSaveLevelNumber();
+    const levelName = this.getDebugSaveLevelName(levelNumber);
+    const payload = this.buildCurrentLevelExport(levelNumber, levelName);
+    const { copied } = await this.downloadLevelPayload(payload);
     if (this.debugExportLevelButton) {
       const original = this.debugExportLevelButton.textContent;
-      this.debugExportLevelButton.textContent = copied ? "скопировано" : "сохранено";
+      this.debugExportLevelButton.textContent = copied ? "скачано+скопировано" : "скачано";
       setTimeout(() => {
         if (this.debugExportLevelButton) {
           this.debugExportLevelButton.textContent = original || "уровень json";
         }
       }, 1200);
     }
+    this.setDebugImageStatus(`JSON экспортирован как ${payload.levelNumber}.json`, "success");
   }
 
   syncDebugInputsFromState() {
@@ -3395,12 +3795,14 @@ class Game {
       ctx.drawImage(this.blockFieldLayer, 0, 0);
     } else {
       for (const block of this.blocks) {
-        const isPlaced = block.alive;
-        const waveOffsetY = isPlaced ? this.getBlockWaveOffsetY(block) : 0;
+        if (!block.alive) {
+          continue;
+        }
+        const waveOffsetY = this.getBlockWaveOffsetY(block);
         this.drawVolumetricBlock(ctx, block, block.x, block.y, {
-          alpha: isPlaced ? 0.96 : 0.24,
-          shadowOpacity: isPlaced ? 0.22 : 0.12,
-          bevelStrength: isPlaced ? 0.26 : 0.14,
+          alpha: 0.96,
+          shadowOpacity: 0.22,
+          bevelStrength: 0.26,
           offsetY: waveOffsetY,
         });
       }
@@ -3446,35 +3848,50 @@ class Game {
     }
 
     const now = performance.now();
-    const pulseFast = 0.5 + 0.5 * Math.sin(now * 0.018);
-    const pulseSlow = 0.5 + 0.5 * Math.sin(now * 0.009 + 1.3);
+    const pulsePhase = ((now * 0.00135) % 1 + 1) % 1;
+    const riseWindow = 0.16;
+    const pulseSpike =
+      pulsePhase < riseWindow
+        ? easeOutCubic(pulsePhase / riseWindow)
+        : Math.pow(1 - (pulsePhase - riseWindow) / (1 - riseWindow), 1.9);
+    const pulse = clamp(0.22 + 0.78 * pulseSpike, 0, 1);
 
     for (const target of targets) {
-      const accentColor = getBlockColorConfig(target.color).accentRgb;
+      const colorRgb = BLOCK_COLOR_TO_RGB[target.color] || BLOCK_COLOR_TO_RGB.green;
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const pulseScale = 1 + 0.12 * pulseFast;
+      const pulseScale = 1 + 0.1 * pulse;
+      const glowOuterR = Math.max(target.size * (1.3 + pulse * 0.35), 14 + pulse * 12);
+      const glowInnerR = Math.max(target.size * 0.32, 4);
 
       ctx.save();
+      const halo = ctx.createRadialGradient(centerX, centerY, glowInnerR, centerX, centerY, glowOuterR);
+      halo.addColorStop(0, `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, ${0.34 + pulse * 0.24})`);
+      halo.addColorStop(0.52, `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, ${0.2 + pulse * 0.18})`);
+      halo.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, glowOuterR, 0, Math.PI * 2);
+      ctx.fill();
+
       ctx.translate(centerX, centerY);
       ctx.scale(pulseScale, pulseScale);
       ctx.translate(-centerX, -centerY);
-
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: 0.72 + pulseSlow * 0.28,
-        shadowOpacity: 0.28 + pulseFast * 0.2,
-        bevelStrength: 0.28 + pulseSlow * 0.16,
+        alpha: 0.88 + 0.12 * pulse,
+        shadowOpacity: 0.28 + 0.09 * pulse,
+        bevelStrength: 0.34 + 0.11 * pulse,
       });
 
-      ctx.globalAlpha = 0.78 + pulseFast * 0.22;
-      ctx.lineWidth = 2.5 + pulseFast * 1.5;
-      ctx.strokeStyle = `rgba(${accentColor}, 0.98)`;
+      ctx.globalAlpha = 0.86 + 0.12 * pulse;
+      ctx.lineWidth = 2.8 + 1.4 * pulse;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.98)";
       roundedRect(ctx, target.x + 2, target.y + 2, target.size - 4, target.size - 4, 7);
       ctx.stroke();
 
-      ctx.globalAlpha = 0.38 + pulseSlow * 0.3;
-      ctx.lineWidth = 1.5 + pulseFast;
-      ctx.strokeStyle = "rgba(20, 40, 70, 0.9)";
+      ctx.globalAlpha = 0.58 + 0.2 * pulse;
+      ctx.lineWidth = 1.9 + 1.05 * pulse;
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
       roundedRect(ctx, target.x - 1, target.y - 1, target.size + 2, target.size + 2, 8);
       ctx.stroke();
       ctx.restore();
@@ -3629,6 +4046,51 @@ class Game {
     }
 
     ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  drawDebugPaintOverlay(ctx) {
+    if (!this.debugPaintModeEnabled) {
+      return;
+    }
+    const fieldW = LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const fieldH = LAYOUT.fieldRows * LAYOUT.fieldStep;
+    const image = this.debugGeneratedSourceImage?.image || null;
+    if (image) {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, LAYOUT.fieldX, LAYOUT.fieldY, fieldW, fieldH);
+      ctx.restore();
+    }
+
+    ctx.save();
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        const color = this.getCellColor(col, row);
+        const x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
+        const y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
+        if (color) {
+          const sprite = this.sprites[`${color}Tile`] || this.sprites.greenTile;
+          if (sprite) {
+            ctx.globalAlpha = 1;
+            ctx.drawImage(sprite, x, y, LAYOUT.cellSize, LAYOUT.cellSize);
+          }
+        }
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, LAYOUT.cellSize - 1, LAYOUT.cellSize - 1);
+      }
+    }
+
+    if (this.debugPaintHoverCell) {
+      const x = LAYOUT.fieldX + this.debugPaintHoverCell.col * LAYOUT.fieldStep;
+      const y = LAYOUT.fieldY + this.debugPaintHoverCell.row * LAYOUT.fieldStep;
+      ctx.strokeStyle = this.debugPaintTool === "erase" ? "rgba(255, 108, 108, 0.95)" : "rgba(122, 233, 255, 0.95)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, LAYOUT.cellSize - 2, LAYOUT.cellSize - 2);
+    }
     ctx.restore();
   }
 
@@ -4252,6 +4714,7 @@ class Game {
       ctx.scale(this.cameraZoom, this.cameraZoom);
       ctx.translate(-fieldCenter.x, -fieldCenter.y);
       this.drawVictoryArtwork(ctx);
+      this.drawDebugPaintOverlay(ctx);
       ctx.restore();
       this.drawConfetti(ctx);
       this.drawTopTimerPanel(ctx);
@@ -4285,6 +4748,7 @@ class Game {
     this.drawCardState(ctx);
     this.drawUnitsOnTrack(ctx);
     this.drawTapDebug(ctx);
+    this.drawDebugPaintOverlay(ctx);
     ctx.restore();
     this.drawConfetti(ctx);
     this.drawTopTimerPanel(ctx);
@@ -4327,10 +4791,12 @@ class Game {
       return this.losePopupAppear < 0.999 || this.levelStartFade > 0.001 || this.hasAnimatingCards();
     }
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
+    const targetPulseAnimating = this.gameState === "playing" && this.getNextSpiralTargets().length > 0;
     const cardsAnimating = this.hasAnimatingCards();
     const zoomAnimating = Math.abs(this.cameraZoomTarget - this.cameraZoom) > 0.001;
     if (
       (this.gameState === "playing" && hasActiveUnits) ||
+      targetPulseAnimating ||
       cardsAnimating ||
       this.projectiles.length > 0 ||
       this.particles.length > 0 ||
@@ -4380,6 +4846,12 @@ class Game {
   }
 
   handlePointerMove(x, y) {
+    if (this.debugPaintModeEnabled) {
+      this.debugPaintHoverCell = this.getFieldCellAt(x, y);
+      this.canvas.style.cursor = this.debugPaintHoverCell ? "crosshair" : "default";
+      this.invalidate(false);
+      return;
+    }
     if (this.gameState === "lose") {
       this.canvas.style.cursor = isInsideRect(x, y, this.loseCloseRect) ? "pointer" : "default";
       return;
@@ -4390,6 +4862,12 @@ class Game {
   }
 
   handlePointerDown(x, y) {
+    if (this.debugPaintModeEnabled) {
+      if (this.applyDebugPaintAt(x, y)) {
+        this.invalidate(false);
+      }
+      return;
+    }
     if (this.gameState === "lose") {
       if (isInsideRect(x, y, this.loseCloseRect)) {
         this.restart();
@@ -4437,6 +4915,8 @@ class Game {
     if (this.debugThemeSelect) {
       this.debugThemeSelect.value = this.getValidThemeId(this.currentThemeId);
     }
+    this.updateTopLevelDebugNav();
+    this.syncDebugSaveTargetInputs(this.currentLevelId);
   }
 
   refreshAvailableLevels() {
@@ -4464,6 +4944,58 @@ class Game {
     this.refreshAvailableLevels();
     fillSelect(this.debugLevelSelect, this.availableLevels, this.getValidLevelId(this.currentLevelId));
     fillSelect(this.debugThemeSelect, this.availableThemes, this.getValidThemeId(this.currentThemeId));
+    this.updateTopLevelDebugNav();
+    this.syncDebugSaveTargetInputs(this.currentLevelId);
+  }
+
+  getTopLevelDebugList() {
+    const levels = Array.isArray(this.availableLevels) ? this.availableLevels : [];
+    return levels.filter((level) => String(level?.id || "") !== DEBUG_IMAGE_LEVEL_ID);
+  }
+
+  updateTopLevelDebugNav() {
+    if (!this.debugLevelTopLabel || !this.debugLevelPrevTopButton || !this.debugLevelNextTopButton) {
+      return;
+    }
+    const levels = this.getTopLevelDebugList();
+    if (levels.length === 0) {
+      this.debugLevelTopLabel.textContent = "No levels";
+      this.debugLevelPrevTopButton.disabled = true;
+      this.debugLevelNextTopButton.disabled = true;
+      return;
+    }
+    const currentId = this.getValidLevelId(this.currentLevelId);
+    const currentIndex = levels.findIndex((level) => String(level.id) === currentId);
+    const resolvedIndex = currentIndex >= 0 ? currentIndex : 0;
+    const active = levels[resolvedIndex];
+    const displayName = String(active?.name || `Level ${active?.id || ""}`).trim();
+    this.debugLevelTopLabel.textContent = `${resolvedIndex + 1}/${levels.length} · ${displayName}`;
+    const disabled = levels.length <= 1;
+    this.debugLevelPrevTopButton.disabled = disabled;
+    this.debugLevelNextTopButton.disabled = disabled;
+  }
+
+  shiftLevelByDebugNav(offset) {
+    const step = Number(offset);
+    if (!Number.isFinite(step) || step === 0) {
+      return;
+    }
+    const levels = this.getTopLevelDebugList();
+    if (levels.length === 0) {
+      return;
+    }
+    const currentId = this.getValidLevelId(this.currentLevelId);
+    const currentIndex = levels.findIndex((level) => String(level.id) === currentId);
+    const from = currentIndex >= 0 ? currentIndex : 0;
+    const nextIndex = (from + Math.sign(step) + levels.length) % levels.length;
+    const nextLevel = levels[nextIndex];
+    if (!nextLevel) {
+      return;
+    }
+    this.applyLevelConfig(nextLevel.id, { restart: true });
+    this.debugSaveTargetDirty = false;
+    this.syncDebugContentSelectors();
+    this.saveDebugSettings();
   }
 
   initDebugContentSelectors() {
@@ -4477,6 +5009,7 @@ class Game {
     if (this.debugLevelSelect) {
       this.debugLevelSelect.addEventListener("change", () => {
         this.applyLevelConfig(this.debugLevelSelect.value, { restart: true });
+        this.debugSaveTargetDirty = false;
         this.syncDebugContentSelectors();
         this.saveDebugSettings();
       });
@@ -4515,6 +5048,110 @@ class Game {
     }
     const { fileName, width, height } = this.debugGeneratedSourceImage;
     this.debugImageFileName.textContent = `${fileName} (${width}x${height})`;
+  }
+
+  getDebugPaintAvailableColors() {
+    const seen = new Set();
+    const colors = [];
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      const line = FALLBACK_FIELD_PATTERN[row] || "";
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        const color = getPatternCellColor(line[col]);
+        if (!color || seen.has(color)) {
+          continue;
+        }
+        seen.add(color);
+        colors.push(color);
+      }
+    }
+    if (colors.length === 0) {
+      colors.push("blue", "white", "black");
+    }
+    return colors;
+  }
+
+  syncDebugPaintColorOptions() {
+    if (!this.debugPaintColorSelect) {
+      return;
+    }
+    const options = this.getDebugPaintAvailableColors();
+    const current = options.includes(this.debugPaintColor) ? this.debugPaintColor : options[0];
+    this.debugPaintColor = current;
+    this.debugPaintColorSelect.innerHTML = "";
+    for (const color of options) {
+      const option = document.createElement("option");
+      option.value = color;
+      option.textContent = BLOCK_COLOR_LABELS[color] || color;
+      this.debugPaintColorSelect.append(option);
+    }
+    this.debugPaintColorSelect.value = current;
+  }
+
+  getFieldCellAt(x, y) {
+    if (x < LAYOUT.fieldX || y < LAYOUT.fieldY) {
+      return null;
+    }
+    const col = Math.floor((x - LAYOUT.fieldX) / LAYOUT.fieldStep);
+    const row = Math.floor((y - LAYOUT.fieldY) / LAYOUT.fieldStep);
+    if (col < 0 || row < 0 || col >= LAYOUT.fieldCols || row >= LAYOUT.fieldRows) {
+      return null;
+    }
+    return { col, row };
+  }
+
+  setFallbackCellColor(col, row, colorOrNull) {
+    const sourceRow = FALLBACK_FIELD_PATTERN[row] || "";
+    const rowChars = sourceRow.split("");
+    while (rowChars.length < LAYOUT.fieldCols) {
+      rowChars.push(".");
+    }
+    rowChars[col] = colorOrNull ? getPatternCellChar(colorOrNull) : ".";
+    FALLBACK_FIELD_PATTERN[row] = rowChars.join("");
+  }
+
+  applyPatternEditToCurrentLevel() {
+    CURRENT_LEVEL.fallbackFieldPattern = [...FALLBACK_FIELD_PATTERN];
+    if (CURRENT_LEVEL.pixelArt && typeof CURRENT_LEVEL.pixelArt === "object") {
+      const pattern = [...FALLBACK_FIELD_PATTERN];
+      CURRENT_LEVEL.pixelArt.pattern = pattern;
+      CURRENT_LEVEL.pixelArt.colorMatrix = pattern.map((line) => [...line].map((cell) => getPatternCellColor(cell)));
+      if (!CURRENT_LEVEL.pixelArt.grid) {
+        CURRENT_LEVEL.pixelArt.grid = {};
+      }
+      CURRENT_LEVEL.pixelArt.grid.cols = LAYOUT.fieldCols;
+      CURRENT_LEVEL.pixelArt.grid.rows = LAYOUT.fieldRows;
+    }
+    upsertLevelDefinition(CURRENT_LEVEL);
+    this.syncDebugPaintColorOptions();
+  }
+
+  applyDebugPaintAt(x, y) {
+    if (!this.debugPaintModeEnabled) {
+      return false;
+    }
+    const hit = this.getFieldCellAt(x, y);
+    this.debugPaintHoverCell = hit;
+    if (!hit) {
+      return false;
+    }
+    const currentColor = this.getCellColor(hit.col, hit.row);
+    let nextColor = currentColor;
+    if (this.debugPaintTool === "erase") {
+      nextColor = null;
+    } else {
+      nextColor = this.debugPaintColor;
+    }
+    if (nextColor === currentColor) {
+      return false;
+    }
+    this.setFallbackCellColor(hit.col, hit.row, nextColor);
+    this.applyPatternEditToCurrentLevel();
+    this.restart();
+    this.setDebugImageStatus(
+      `Изменено: (${hit.col + 1}, ${hit.row + 1}) -> ${nextColor ? (BLOCK_COLOR_LABELS[nextColor] || nextColor) : "пусто"}`,
+      "success"
+    );
+    return true;
   }
 
   syncDebugImageGridInputs(cols, rows) {
@@ -4626,9 +5263,9 @@ class Game {
       throw new Error("Не удалось создать canvas для генератора.");
     }
     ctx.clearRect(0, 0, cols, rows);
-    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = false;
     if ("imageSmoothingQuality" in ctx) {
-      ctx.imageSmoothingQuality = "high";
+      ctx.imageSmoothingQuality = "low";
     }
     ctx.drawImage(image, 0, 0, cols, rows);
     const { data } = ctx.getImageData(0, 0, cols, rows);
@@ -4640,10 +5277,13 @@ class Game {
       const nextRow = [];
       for (let col = 0; col < cols; col++) {
         const index = (row * cols + col) * 4;
-        const alpha = data[index + 3];
-        let color = null;
-        if (alpha >= 24) {
-          color = getNearestBlockColor(data[index], data[index + 1], data[index + 2]);
+        const color = pickSampledBlockColor(
+          data[index],
+          data[index + 1],
+          data[index + 2],
+          data[index + 3]
+        );
+        if (color !== null) {
           colorCounts[color] = (colorCounts[color] || 0) + 1;
           filledCells += 1;
         }
@@ -4752,6 +5392,7 @@ class Game {
     this.syncDebugImageGridInputs(CURRENT_LEVEL.layout?.fieldCols || 18, CURRENT_LEVEL.layout?.fieldRows || 18);
     this.syncDebugImageScaleInput(1);
     this.syncDebugImageOffsetYInput(0);
+    this.syncDebugPaintColorOptions();
     this.syncDebugImageFileName();
     this.setDebugImageStatus("Выбери изображение, затем укажи сетку и нажми создать.");
     const bindRange = (input, output, currentValue, parseValue, formatValue, onApply) => {
@@ -5030,6 +5671,50 @@ class Game {
         event.preventDefault();
       });
     }
+    if (this.debugPaintModeInput) {
+      this.debugPaintModeInput.checked = this.debugPaintModeEnabled;
+      this.debugPaintModeInput.addEventListener("change", () => {
+        this.debugPaintModeEnabled = !!this.debugPaintModeInput?.checked;
+        this.debugPaintHoverCell = null;
+        if (!this.debugPaintModeEnabled) {
+          this.canvas.style.cursor = "default";
+        }
+        this.invalidate(false);
+      });
+    }
+    if (this.debugPaintToolSelect) {
+      this.debugPaintToolSelect.value = this.debugPaintTool;
+      this.debugPaintToolSelect.addEventListener("change", () => {
+        const value = this.debugPaintToolSelect?.value === "erase" ? "erase" : "paint";
+        this.debugPaintTool = value;
+      });
+    }
+    if (this.debugPaintColorSelect) {
+      this.debugPaintColorSelect.addEventListener("change", () => {
+        const value = String(this.debugPaintColorSelect?.value || "");
+        if (value) {
+          this.debugPaintColor = value;
+        }
+      });
+    }
+    if (this.debugSaveLevelNumberInput) {
+      this.debugSaveLevelNumberInput.addEventListener("input", () => {
+        this.debugSaveTargetDirty = true;
+        const levelNumber = this.getDebugSaveLevelNumber();
+        if (this.debugSaveLevelNameInput) {
+          const currentName = String(this.debugSaveLevelNameInput.value || "").trim();
+          if (!currentName || /^level\s+\d+$/i.test(currentName)) {
+            this.debugSaveLevelNameInput.value = `Level ${levelNumber}`;
+          }
+        }
+      });
+      this.syncDebugSaveTargetInputs(this.currentLevelId, { force: true });
+    }
+    if (this.debugSaveLevelNameInput) {
+      this.debugSaveLevelNameInput.addEventListener("input", () => {
+        this.debugSaveTargetDirty = true;
+      });
+    }
   }
 
   setDebugPanelVisible(visible) {
@@ -5095,7 +5780,25 @@ class Game {
     }
     if (this.debugExportLevelButton) {
       this.debugExportLevelButton.addEventListener("click", (event) => {
-        this.exportCurrentLevelJSON();
+        void this.exportCurrentLevelJSON();
+        event.preventDefault();
+      });
+    }
+    if (this.debugSaveCurrentLevelButton) {
+      this.debugSaveCurrentLevelButton.addEventListener("click", (event) => {
+        void this.saveOverCurrentLevel();
+        event.preventDefault();
+      });
+    }
+    if (this.debugSaveTargetLevelButton) {
+      this.debugSaveTargetLevelButton.addEventListener("click", (event) => {
+        void this.saveToTargetLevel();
+        event.preventDefault();
+      });
+    }
+    if (this.debugPickLevelsFolderButton) {
+      this.debugPickLevelsFolderButton.addEventListener("click", (event) => {
+        void this.pickDebugLevelsFolder();
         event.preventDefault();
       });
     }
@@ -5109,6 +5812,18 @@ class Game {
     if (this.debugToggleFab) {
       this.debugToggleFab.addEventListener("click", (event) => {
         this.toggleDebugPanel();
+        event.preventDefault();
+      });
+    }
+    if (this.debugLevelPrevTopButton) {
+      this.debugLevelPrevTopButton.addEventListener("click", (event) => {
+        this.shiftLevelByDebugNav(-1);
+        event.preventDefault();
+      });
+    }
+    if (this.debugLevelNextTopButton) {
+      this.debugLevelNextTopButton.addEventListener("click", (event) => {
+        this.shiftLevelByDebugNav(1);
         event.preventDefault();
       });
     }
@@ -5190,6 +5905,8 @@ async function bootstrapGame() {
   const loadedLevels = await loadLevelDefinitions();
   const fallbackLevels = LEVEL_DEFINITIONS_FALLBACK.length ? LEVEL_DEFINITIONS_FALLBACK : [BUILTIN_FALLBACK_LEVEL];
   rebuildLevelRegistry(loadedLevels.length ? loadedLevels : fallbackLevels);
+  loadLevelOverridesFromStorage();
+  applyLoadedLevelOverrides();
 
   const initialLevel = getLevelConfig(DEFAULT_LEVEL_ID);
   syncLevelGlobals(initialLevel);

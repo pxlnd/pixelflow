@@ -49,6 +49,56 @@ body {
   cursor: pointer;
 }
 
+.debug-level-nav {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0) + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: inline-grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  max-width: min(92vw, 420px);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(10, 23, 38, 0.8);
+  padding: 5px 8px;
+  backdrop-filter: blur(4px);
+}
+
+.debug-level-nav button {
+  width: 34px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font: 800 16px/1 Arial, sans-serif;
+  cursor: pointer;
+}
+
+.debug-level-nav button:active {
+  transform: translateY(1px);
+}
+
+.debug-level-nav button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.debug-level-nav-label {
+  min-width: 0;
+  text-align: center;
+  color: #ffffff;
+  font: 800 12px/1.2 Arial, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
 .debug-fab {
   position: absolute;
   right: 12px;
@@ -166,13 +216,33 @@ body {
   padding: 7px 8px;
 }
 
+.debug-check {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  font: 700 11px/1.2 Arial, sans-serif;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.debug-check input[type="checkbox"] {
+  margin: 0;
+}
+
+.debug-edit-controls {
+  margin-top: 2px;
+}
+
 #debug6,
 #debugReset,
 #debugExport,
 #debugExportLevel,
 #debugImageLevelToggle,
 #debugImageCreate,
-#debugImageRefresh {
+#debugImageRefresh,
+#debugSaveCurrentLevel,
+#debugSaveTargetLevel,
+#debugPickLevelsFolder {
   border: 1px solid rgba(255, 255, 255, 0.45);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.14);
@@ -189,7 +259,10 @@ body {
 #debugExportLevel:active,
 #debugImageLevelToggle:active,
 #debugImageCreate:active,
-#debugImageRefresh:active {
+#debugImageRefresh:active,
+#debugSaveCurrentLevel:active,
+#debugSaveTargetLevel:active,
+#debugPickLevelsFolder:active {
   transform: translateY(1px);
 }
 
@@ -269,6 +342,16 @@ body {
 .debug-generator-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.debug-save-grid {
+  margin-top: 2px;
+}
+
+.debug-save-actions {
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 6px;
 }
 

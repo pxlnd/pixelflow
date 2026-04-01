@@ -65,6 +65,38 @@
           <button id="debugImageCreate" type="button" aria-label="Создать уровень из картинки">создать</button>
           <button id="debugImageRefresh" type="button" aria-label="Обновить картинку в новой сетке">обновить</button>
         </div>
+        <label class="debug-check" for="debugPaintMode">
+          <input id="debugPaintMode" type="checkbox">
+          <span>редактировать рисунок на поле</span>
+        </label>
+        <div class="debug-grid debug-edit-controls">
+          <label class="debug-select" for="debugPaintTool">
+            <span>Инструмент</span>
+            <select id="debugPaintTool" aria-label="Инструмент редактирования">
+              <option value="paint">добавить/перекрасить</option>
+              <option value="erase">стереть</option>
+            </select>
+          </label>
+          <label class="debug-select" for="debugPaintColor">
+            <span>Цвет</span>
+            <select id="debugPaintColor" aria-label="Цвет блока"></select>
+          </label>
+        </div>
+        <div class="debug-grid debug-save-grid">
+          <label class="debug-number" for="debugSaveLevelNumber">
+            <span>Номер уровня</span>
+            <input id="debugSaveLevelNumber" type="number" min="1" max="999" step="1" value="2" inputmode="numeric">
+          </label>
+          <label class="debug-number" for="debugSaveLevelName">
+            <span>Название</span>
+            <input id="debugSaveLevelName" type="text" value="Level 2" maxlength="64">
+          </label>
+        </div>
+        <div class="debug-save-actions">
+          <button id="debugSaveCurrentLevel" type="button" aria-label="Перезаписать открытый уровень">заменить открытый</button>
+          <button id="debugSaveTargetLevel" type="button" aria-label="Сохранить уровень в выбранный номер">сохранить в номер</button>
+          <button id="debugPickLevelsFolder" type="button" aria-label="Выбрать папку уровней">папка уровней</button>
+        </div>
         <div id="debugImageStatus" class="debug-status" aria-live="polite">Выбери изображение, затем укажи сетку и нажми создать.</div>
       </div>
 
@@ -174,15 +206,20 @@
         </label>
       </div>
     </aside>
+    <div class="debug-level-nav" aria-label="Быстрое переключение уровня">
+      <button id="debugLevelPrevTop" type="button" aria-label="Предыдущий уровень">←</button>
+      <div id="debugLevelTopLabel" class="debug-level-nav-label">Level 1</div>
+      <button id="debugLevelNextTop" type="button" aria-label="Следующий уровень">→</button>
+    </div>
     <button id="debugToggleFab" class="debug-fab" type="button" aria-label="Открыть отладку">DBG</button>
     <canvas id="gameCanvas" aria-label="PixelFlow mini puzzle game"></canvas>
   </main>
   <script src="game-data/themes/theme-classic.js?v=20260331-2"></script>
   <script src="game-data/themes/theme-sunset.js?v=20260331-2"></script>
   <script src="game-data/themes/index.js?v=20260331-2"></script>
-  <script src="game-data/levels/level-1.js?v=20260331-3"></script>
-  <script src="game-data/levels/level-3.js?v=20260331-3"></script>
-  <script src="game-data/levels/index.js?v=20260331-3"></script>
-  <script src="main.js?v=20260331-2"></script>
+  <script src="game-data/levels/level-1.js?v=20260401-1"></script>
+  <script src="game-data/levels/level-2.js?v=20260401-2"></script>
+  <script src="game-data/levels/index.js?v=20260401-1"></script>
+  <script src="main.js?v=20260401-6"></script>
 </body>
 </html>
