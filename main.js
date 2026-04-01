@@ -270,32 +270,32 @@ let SHOT_BOUNCE_AMOUNT = 0.2;
 let SHOT_BOUNCE_SPEED = 1;
 let TRACK_UNIT_SPEED = 980;
 let BOTTOM_QUEUE_CARD_COUNT = 7;
-let CHICKEN_SIZE_SCALE = 1;
+let CHICKEN_SIZE_SCALE = 1.6;
 let TOP_PANEL_FONT_SIZE = 67;
 let TOP_LEVEL_PANEL_SCALE = 1.2;
 let TOP_COINS_PANEL_SCALE = 1.2;
 let BACK_BUTTON_SCALE = 1.2;
-let TRACK_Y_OFFSET = 42;
+let TRACK_Y_OFFSET = -33;
 let TRACK_Y_OFFSET_MOBILE = -33;
 let PLAYFIELD_SCALE = 0.88;
-let SLOT_SIZE_SCALE = 1.12;
+let SLOT_SIZE_SCALE = 1.49;
 let SLOT_Y_OFFSET = -72;
 let SLOT_SPACING_X_MOBILE = 1.03;
-let SLOT_SPACING_X_DESKTOP = 0.88;
+let SLOT_SPACING_X_DESKTOP = 1.03;
 let TRAY_BOTTOM_OFFSET = 82;
-let TRAY_BOTTOM_OFFSET_DESKTOP = 60;
+let TRAY_BOTTOM_OFFSET_DESKTOP = 82;
 let TRAY_SCALE_Y_MOBILE = 1.14;
-let TRAY_SCALE_Y_DESKTOP = 1.05;
-let TOP_UI_Y_OFFSET = 65;
+let TRAY_SCALE_Y_DESKTOP = 1.14;
+let TOP_UI_Y_OFFSET = 35;
 let TOP_UI_Y_OFFSET_MOBILE = 35;
-let MOBILE_BOTTOM_CLUSTER_Y_OFFSET = -42;
+let MOBILE_BOTTOM_CLUSTER_Y_OFFSET = -170;
 let CARD_Y_OFFSET_ALL = -72;
 let CARD_Y_OFFSET_1 = 60;
 let CARD_Y_OFFSET_2 = 7;
 let CARD_Y_OFFSET_3 = 0;
 let CARD_Y_OFFSET_4 = 0;
 let QUEUE_SPACING_X_MOBILE = 1;
-let QUEUE_SPACING_X_DESKTOP = 0.8;
+let QUEUE_SPACING_X_DESKTOP = 1;
 const UNIT_BLOCK_SIZE = 74;
 const SHOOTER_HIT_RADIUS = 88;
 const CARD_HITBOX_PADDING_X = 26;
@@ -305,6 +305,17 @@ const PARKED_UNIT_TAP_RADIUS = 86;
 const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
+const TRAY_OFFSCREEN_OVERSCAN = 56;
+const TRACK_TO_BOTTOM_CLUSTER_GAP_PORTRAIT = 186;
+const TRACK_TO_BOTTOM_CLUSTER_GAP_LANDSCAPE = 112;
+const TRACK_TO_TOP_UI_GAP_PORTRAIT = 86;
+const TRACK_TO_TOP_UI_GAP_LANDSCAPE = 59;
+const GLOBAL_LAYOUT_Y_SHIFT_RATIO = 0.1;
+const TOP_UI_EXTRA_UP_SHIFT_RATIO = 0.04;
+const TRACK_SIDE_MARGIN_RATIO = 0.05;
+const TRACK_FRAME_OUTSET = 40;
+const TRACK_CENTERING_UP_OFFSET = 48;
+const FIELD_CENTERING_UP_RATIO = 0.02;
 let BOARD_FILL_COLOR = "#6aa93a";
 const RAILWAY_SOURCE_SIZE = { w: 401, h: 407 };
 const RAILWAY_PATH_NORMALIZED = {
@@ -403,27 +414,27 @@ const DEBUG_DEFAULTS = {
   shotBounceSpeed: 1,
   trackUnitSpeed: 980,
   queueCardCount: 7,
-  chickenSizeScale: 1,
+  chickenSizeScale: 1.6,
   topPanelFontSize: 67,
   topLevelPanelScale: 1.2,
   topCoinsPanelScale: 1.2,
   backButtonScale: 1.2,
-  trackYOffset: 42,
+  trackYOffset: -33,
   trackYOffsetMobile: -33,
   playfieldScale: 0.88,
-  slotSizeScale: 1.12,
+  slotSizeScale: 1.49,
   slotYOffset: -72,
   slotSpacingXMobile: 1.03,
-  slotSpacingXDesktop: 0.88,
+  slotSpacingXDesktop: 1.03,
   trayBottomOffset: 82,
-  trayBottomOffsetDesktop: 60,
+  trayBottomOffsetDesktop: 82,
   trayScaleYMobile: 1.14,
-  trayScaleYDesktop: 1.05,
+  trayScaleYDesktop: 1.14,
   queueSpacingXMobile: 1,
-  queueSpacingXDesktop: 0.8,
-  topUiYOffset: 65,
+  queueSpacingXDesktop: 1,
+  topUiYOffset: 35,
   topUiYOffsetMobile: 35,
-  mobileBottomClusterYOffset: -42,
+  mobileBottomClusterYOffset: -170,
   cardYOffsetAll: -72,
   cardYOffset1: 60,
   cardYOffset2: 7,
@@ -2397,13 +2408,10 @@ class Game {
   }
 
   getBottomQueueUnderlayRect() {
-    const activeCards = Array.isArray(this.cards) ? this.cards.filter((card) => card && !card.used) : [];
     const queueCards =
-      activeCards.length > 0
-        ? activeCards
-        : this.cardManager && Array.isArray(this.cardManager.cardLayouts) && this.cardManager.cardLayouts.length > 0
-          ? this.cardManager.cardLayouts
-          : LAYOUT.cards;
+      this.cardManager && Array.isArray(this.cardManager.cardLayouts) && this.cardManager.cardLayouts.length > 0
+        ? this.cardManager.cardLayouts
+        : LAYOUT.cards;
     const elements = [...LAYOUT.slots, ...queueCards];
     if (!elements.length) {
       return null;
@@ -2427,28 +2435,27 @@ class Game {
     const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
     const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
     const isPortrait = vh >= vw;
-    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
-    const useMobileTrayTuning = isMobileLike && isPortrait;
+    const usePortraitTray = isPortrait;
 
-    const padX = useMobileTrayTuning ? 20 : 24;
-    const padTop = useMobileTrayTuning ? 26 : 20;
-    const padBottom = useMobileTrayTuning ? 28 : 30;
+    const padTop = usePortraitTray ? 26 : 20;
+    const padBottom = usePortraitTray ? 28 : 30;
     const rawY = Math.floor(minY - padTop);
     const rawBottom = Math.ceil(maxY + padBottom);
-    const y = useMobileTrayTuning ? rawY : clamp(rawY, 0, this.height);
+    const y = usePortraitTray ? rawY : clamp(rawY, 0, this.height);
     const safeScale = Math.max(0.0001, this.viewportScale || 1);
     const visibleWorldBottom = (this.screenHeight - this.viewportOffsetY) / safeScale;
-    const viewportOverflowBottom = Math.max(0, visibleWorldBottom - this.height);
-    const mobileBottomTarget = this.height + viewportOverflowBottom + TRAY_BOTTOM_OFFSET;
-    const desktopBottomTarget = rawBottom + TRAY_BOTTOM_OFFSET_DESKTOP;
-    const bottom = useMobileTrayTuning ? mobileBottomTarget : desktopBottomTarget;
-    // Portrait mobile: add small side overscan so the textured wood fully reaches screen edges.
-    const mobileSideOverscan = useMobileTrayTuning ? 24 : 0;
-    const x = useMobileTrayTuning ? -mobileSideOverscan : clamp(Math.floor(minX - padX), 0, this.width);
-    const right = useMobileTrayTuning ? this.width + mobileSideOverscan : clamp(Math.ceil(maxX + padX), 0, this.width);
+    const anchorOffset = usePortraitTray ? TRAY_BOTTOM_OFFSET : TRAY_BOTTOM_OFFSET_DESKTOP;
+    const contentBottom = rawBottom + anchorOffset + (usePortraitTray ? 0 : 8);
+    // Hard guarantee: tray must always extend below the visible viewport bottom, regardless of device aspect.
+    const viewportBottomTarget = visibleWorldBottom + TRAY_OFFSCREEN_OVERSCAN;
+    const bottom = Math.max(contentBottom + TRAY_OFFSCREEN_OVERSCAN, viewportBottomTarget);
+    // Keep a small horizontal overscan in all viewports to avoid visible corner seams.
+    const sideOverscan = 24;
+    const x = -sideOverscan;
+    const right = this.width + sideOverscan;
     const w = Math.max(0, right - x);
     const rawH = Math.max(1, bottom - y);
-    const trayScaleY = useMobileTrayTuning ? TRAY_SCALE_Y_MOBILE : TRAY_SCALE_Y_DESKTOP;
+    const trayScaleY = usePortraitTray ? TRAY_SCALE_Y_MOBILE : TRAY_SCALE_Y_DESKTOP;
     const h = Math.max(1, Math.round(rawH * trayScaleY));
     const scaledY = bottom - h;
     if (w <= 0 || h <= 0) {
@@ -2460,7 +2467,7 @@ class Game {
       y: scaledY,
       w,
       h,
-      r: Math.min(useMobileTrayTuning ? 58 : 30, Math.floor(Math.min(w, h) * (useMobileTrayTuning ? 0.26 : 0.16))),
+      r: Math.min(usePortraitTray ? 58 : 30, Math.floor(Math.min(w, h) * (usePortraitTray ? 0.26 : 0.16))),
     };
   }
 
@@ -2733,52 +2740,35 @@ class Game {
     const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
     const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
     const isPortrait = vh >= vw;
-    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
-    if (!isMobileLike) {
-      return {
-        playfieldScaleMul: 1,
-        topUiYOffsetAdd: 0,
-        trackYOffsetAdd: 0,
-        slotYOffsetAdd: 0,
-        cardYOffsetAllAdd: 0,
-        cardOffsetMul: 1,
-        cardLaneSpacingMul: 1,
-        backButtonScaleMul: 1,
-        topLevelPanelScaleMul: 1,
-        topCoinsPanelScaleMul: 1,
-        viewportTopPadding: null,
-      };
-    }
-
-    const shortSide = Math.min(vw, vh);
-    const compactness = clamp((430 - shortSide) / 210, 0, 1);
     if (isPortrait) {
+      const aspect = vh / vw;
+      const tallness = clamp((aspect - 1.78) / 0.5, 0, 1);
       return {
-        playfieldScaleMul: 1.04 - compactness * 0.02,
-        topUiYOffsetAdd: -8 - compactness * 6,
-        trackYOffsetAdd: 58 + compactness * 30,
-        slotYOffsetAdd: 128 + compactness * 48,
-        cardYOffsetAllAdd: 138 + compactness * 70,
+        playfieldScaleMul: 1.03 - tallness * 0.02,
+        topUiYOffsetAdd: -10,
+        trackYOffsetAdd: 58 + tallness * 10,
+        slotYOffsetAdd: 128 + tallness * 22,
+        cardYOffsetAllAdd: 140 + tallness * 28,
         cardOffsetMul: 0.62,
-        cardLaneSpacingMul: 0.82,
+        cardLaneSpacingMul: 0.84,
         backButtonScaleMul: 0.94,
         topLevelPanelScaleMul: 0.9,
         topCoinsPanelScaleMul: 0.92,
-        viewportTopPadding: 16 + compactness * 12,
+        viewportTopPadding: 14,
       };
     }
 
     return {
-      playfieldScaleMul: 1.03,
-      topUiYOffsetAdd: -12,
-      trackYOffsetAdd: -10,
-      slotYOffsetAdd: -10,
-      cardYOffsetAllAdd: -48,
-      cardOffsetMul: 0.7,
-      cardLaneSpacingMul: 1,
-      backButtonScaleMul: 1.04,
-      topLevelPanelScaleMul: 0.96,
-      topCoinsPanelScaleMul: 0.98,
+      playfieldScaleMul: 0.98,
+      topUiYOffsetAdd: 0,
+      trackYOffsetAdd: 8,
+      slotYOffsetAdd: 14,
+      cardYOffsetAllAdd: 10,
+      cardOffsetMul: 0.86,
+      cardLaneSpacingMul: 0.92,
+      backButtonScaleMul: 1,
+      topLevelPanelScaleMul: 1,
+      topCoinsPanelScaleMul: 1,
       viewportTopPadding: null,
     };
   }
@@ -2786,69 +2776,84 @@ class Game {
   isMobilePortraitViewport() {
     const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
     const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
-    const isMobileLike = vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
-    return isMobileLike && vh >= vw;
+    return vh >= vw;
   }
 
   isMobileLikeViewport() {
-    const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
-    return vw <= 920 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches && vw <= 1100);
+    return this.isMobilePortraitViewport();
   }
 
   applyDebugLayout() {
     const tuning = this.getViewportAdaptiveTuning();
     const isMobilePortrait = this.isMobilePortraitViewport();
-    const isMobileLike = this.isMobileLikeViewport();
-    const baseTopUiYOffset = isMobileLike ? TOP_UI_Y_OFFSET_MOBILE : TOP_UI_Y_OFFSET;
-    const effectiveTopUiYOffset = baseTopUiYOffset + tuning.topUiYOffsetAdd;
-    const baseTrackYOffset = isMobileLike ? TRACK_Y_OFFSET_MOBILE : TRACK_Y_OFFSET;
-    const effectiveTrackYOffset = baseTrackYOffset + tuning.trackYOffsetAdd;
+    const globalLayoutShiftY = Math.round(this.height * GLOBAL_LAYOUT_Y_SHIFT_RATIO);
+    const topUiExtraUpShiftY = Math.round(this.height * TOP_UI_EXTRA_UP_SHIFT_RATIO);
+    const baseTopUiYOffset = TOP_UI_Y_OFFSET_MOBILE;
+    const effectiveTopUiYOffset = baseTopUiYOffset + tuning.topUiYOffsetAdd + globalLayoutShiftY - topUiExtraUpShiftY;
+    const baseTrackYOffset = TRACK_Y_OFFSET_MOBILE;
+    const effectiveTrackYOffset = baseTrackYOffset + tuning.trackYOffsetAdd + globalLayoutShiftY - TRACK_CENTERING_UP_OFFSET;
     const effectiveSlotYOffset = SLOT_Y_OFFSET + tuning.slotYOffsetAdd;
     const effectiveCardYOffsetAll = CARD_Y_OFFSET_ALL + tuning.cardYOffsetAllAdd;
     const effectiveCardOffsetMul = tuning.cardOffsetMul;
-    const effectiveQueueSpacingX = isMobileLike ? QUEUE_SPACING_X_MOBILE : QUEUE_SPACING_X_DESKTOP;
+    const effectiveQueueSpacingX = QUEUE_SPACING_X_MOBILE;
     const effectiveCardLaneSpacingMul = tuning.cardLaneSpacingMul * effectiveQueueSpacingX;
-    const effectiveSlotSpacingX = isMobileLike ? SLOT_SPACING_X_MOBILE : SLOT_SPACING_X_DESKTOP;
-    const effectivePlayfieldScale = PLAYFIELD_SCALE * tuning.playfieldScaleMul;
+    const effectiveSlotSpacingX = SLOT_SPACING_X_MOBILE;
     const effectiveBackButtonScale = BACK_BUTTON_SCALE * tuning.backButtonScaleMul;
     const effectiveTopLevelPanelScale = TOP_LEVEL_PANEL_SCALE * tuning.topLevelPanelScaleMul;
     const effectiveTopCoinsPanelScale = TOP_COINS_PANEL_SCALE * tuning.topCoinsPanelScaleMul;
-
-    BACK_BUTTON_UI.y = Math.round(BASE_TOP_UI.backY + effectiveTopUiYOffset);
-    TIMER_PANEL_UI.y = Math.round(BASE_TOP_UI.timerY + effectiveTopUiYOffset);
-    COINS_UI.panelY = Math.round(BASE_TOP_UI.coinsY + effectiveTopUiYOffset);
 
     TIMER_PANEL_UI.w = Math.round(BASE_TOP_UI.timerW * effectiveTopLevelPanelScale);
     TIMER_PANEL_UI.h = Math.round(BASE_TOP_UI.timerH * effectiveTopLevelPanelScale);
     COINS_UI.panelW = Math.round(BASE_TOP_UI.coinsW * effectiveTopCoinsPanelScale);
     COINS_UI.panelH = Math.round(BASE_TOP_UI.coinsH * effectiveTopCoinsPanelScale);
-    this.backButtonRect.y = BACK_BUTTON_UI.y;
     this.backButtonRect.w = Math.round(BASE_TOP_UI.backW * effectiveBackButtonScale);
     this.backButtonRect.h = Math.round(BASE_TOP_UI.backH * effectiveBackButtonScale);
+    const viewportWorld = this.getViewportWorldRect();
+    const horizontalBoundsX = 0;
+    const horizontalBoundsW = this.width;
+    const trackSideMargin = Math.max(16, Math.round(horizontalBoundsW * TRACK_SIDE_MARGIN_RATIO));
+    const targetOuterTrackW = Math.max(120, Math.round(horizontalBoundsW - trackSideMargin * 2));
+    const targetTrackW = Math.max(120, targetOuterTrackW - TRACK_FRAME_OUTSET * 2);
+    const trackScale = Math.max(0.0001, targetTrackW / BASE_LAYOUT.track.w);
+    const trackAspect = BASE_LAYOUT.track.h / BASE_LAYOUT.track.w;
+    const trackCenterX = horizontalBoundsX + horizontalBoundsW * 0.5;
+    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
+    LAYOUT.track.w = targetTrackW;
+    LAYOUT.track.h = Math.max(120, Math.round(targetTrackW * trackAspect));
+    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * trackScale));
+    LAYOUT.track.x = Math.round(trackCenterX - LAYOUT.track.w * 0.5);
+    LAYOUT.track.y = Math.round(baseTrackCenterY - LAYOUT.track.h * 0.5);
+
+    const minTopUiY = Math.round(viewportWorld.y + 12);
+    const trackToTopUiGap = isMobilePortrait ? TRACK_TO_TOP_UI_GAP_PORTRAIT : TRACK_TO_TOP_UI_GAP_LANDSCAPE;
+    const topUiBottom = Math.round(LAYOUT.track.y - trackToTopUiGap);
+    TIMER_PANEL_UI.y = Math.max(minTopUiY, topUiBottom - TIMER_PANEL_UI.h);
+    const sideButtonY = Math.max(minTopUiY, Math.round(TIMER_PANEL_UI.y + (TIMER_PANEL_UI.h - this.backButtonRect.h) * 0.5));
+    this.backButtonRect.y = sideButtonY;
+    BACK_BUTTON_UI.y = sideButtonY;
+    COINS_UI.panelY = sideButtonY;
+    const sideButtonGap = Math.max(10, Math.round(LAYOUT.track.w * 0.02));
+    this.backButtonRect.x = Math.round(LAYOUT.track.x + sideButtonGap);
+    COINS_UI.rightMargin = Math.round(this.width - (LAYOUT.track.x + LAYOUT.track.w) + sideButtonGap);
     this.restartButtonRect = this.getRestartButtonRect();
 
     const baseTrackCenterX = BASE_LAYOUT.track.x + BASE_LAYOUT.track.w * 0.5;
-    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
-    LAYOUT.track.w = Math.max(120, Math.round(BASE_LAYOUT.track.w * effectivePlayfieldScale));
-    LAYOUT.track.h = Math.max(120, Math.round(BASE_LAYOUT.track.h * effectivePlayfieldScale));
-    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * effectivePlayfieldScale));
-    LAYOUT.track.x = Math.round(baseTrackCenterX - LAYOUT.track.w * 0.5);
-    LAYOUT.track.y = Math.round(baseTrackCenterY - LAYOUT.track.h * 0.5);
+    const baseTrackCenterYForSpawn = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
     const baseSpawnOffsetX = BASE_LAYOUT.spawnPoint.x - baseTrackCenterX;
     const baseSpawnOffsetY = BASE_LAYOUT.spawnPoint.y - (BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5);
-    LAYOUT.spawnPoint.x = Math.round(baseTrackCenterX + baseSpawnOffsetX * effectivePlayfieldScale);
-    LAYOUT.spawnPoint.y = Math.round(baseTrackCenterY + baseSpawnOffsetY * effectivePlayfieldScale);
+    LAYOUT.spawnPoint.x = Math.round(trackCenterX + baseSpawnOffsetX * trackScale);
+    LAYOUT.spawnPoint.y = Math.round(baseTrackCenterYForSpawn + baseSpawnOffsetY * trackScale);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
 
-    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * effectivePlayfieldScale));
-    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * effectivePlayfieldScale));
-    const baseFieldCenterX = BASE_LAYOUT.fieldX + (BASE_LAYOUT.fieldCols * BASE_LAYOUT.fieldStep) * 0.5;
-    const baseFieldCenterY = BASE_LAYOUT.fieldY + (BASE_LAYOUT.fieldRows * BASE_LAYOUT.fieldStep) * 0.5;
-    const shiftedFieldCenterY = baseFieldCenterY + effectiveTrackYOffset;
+    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * trackScale));
+    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * trackScale));
+    const fieldCenterX = LAYOUT.track.x + LAYOUT.track.w * 0.5;
+    const debugLevelFieldOffsetY = clampDebugImageOffsetY(CURRENT_LEVEL?.pixelArt?.offsetY ?? 0);
+    const fieldCenterY = LAYOUT.track.y + LAYOUT.track.h * 0.5 - LAYOUT.track.h * FIELD_CENTERING_UP_RATIO + debugLevelFieldOffsetY;
     const fieldW = BASE_LAYOUT.fieldCols * LAYOUT.fieldStep;
     const fieldH = BASE_LAYOUT.fieldRows * LAYOUT.fieldStep;
-    LAYOUT.fieldX = Math.round(baseFieldCenterX - fieldW * 0.5);
-    LAYOUT.fieldY = Math.round(shiftedFieldCenterY - fieldH * 0.5);
+    LAYOUT.fieldX = Math.round(fieldCenterX - fieldW * 0.5);
+    LAYOUT.fieldY = Math.round(fieldCenterY - fieldH * 0.5);
 
     for (const block of this.blocks) {
       block.x = LAYOUT.fieldX + block.col * LAYOUT.fieldStep;
@@ -2865,7 +2870,7 @@ class Game {
       const w = Math.max(90, Math.round(baseSlot.w * SLOT_SIZE_SCALE));
       const h = Math.max(72, Math.round(baseSlot.h * SLOT_SIZE_SCALE));
       const baseCenterX = baseSlot.x + baseSlot.w * 0.5;
-      const centerX = baseFieldCenterX + (baseCenterX - baseFieldCenterX) * effectiveSlotSpacingX;
+      const centerX = fieldCenterX + (baseCenterX - fieldCenterX) * effectiveSlotSpacingX;
       const centerY = baseSlot.y + baseSlot.h * 0.5 + effectiveSlotYOffset;
       slot.w = w;
       slot.h = h;
@@ -2875,23 +2880,34 @@ class Game {
 
     const dynamicCardLayouts = BASE_LAYOUT.cards.map((baseCard, index) => ({
       ...baseCard,
-      x: Math.round(baseFieldCenterX + (baseCard.x + baseCard.w * 0.5 - baseFieldCenterX) * effectiveCardLaneSpacingMul - baseCard.w * 0.5),
+      x: Math.round(fieldCenterX + (baseCard.x + baseCard.w * 0.5 - fieldCenterX) * effectiveCardLaneSpacingMul - baseCard.w * 0.5),
       y: Math.round(baseCard.y + effectiveCardYOffsetAll + getCardYOffsetByIndex(index) * effectiveCardOffsetMul),
     }));
 
     if (isMobilePortrait) {
       // Match reference: top 4 tray slots are empty; queue birds start below in a 2-column stack.
-      const mobileCardW = 146;
-      const mobileCardH = 184;
+      const mobileCardW = Math.round(clamp((LAYOUT.slots[0]?.w || 194) * 0.74, 132, 158));
+      const mobileCardH = Math.round(mobileCardW * 1.26);
       const trayCenterX =
         LAYOUT.slots.length > 0
           ? LAYOUT.slots.reduce((sum, slot) => sum + slot.x + slot.w * 0.5, 0) / LAYOUT.slots.length
           : this.width * 0.5;
       const slotsBottom = LAYOUT.slots.length > 0 ? Math.max(...LAYOUT.slots.map((slot) => slot.y + slot.h)) : 1240;
-      const colGap = 196 * effectiveQueueSpacingX;
-      const colCenters = [trayCenterX - colGap * 0.5, trayCenterX + colGap * 0.5];
-      const firstRowY = Math.round(slotsBottom + 4);
-      const rowGap = 124;
+      const slotCenters = [...LAYOUT.slots]
+        .map((slot) => slot.x + slot.w * 0.5)
+        .sort((a, b) => a - b);
+      const colGap = Math.round(196 * effectiveQueueSpacingX);
+      let colCenters =
+        slotCenters.length >= 4
+          ? [slotCenters[1], slotCenters[2]]
+          : [trayCenterX - colGap * 0.5, trayCenterX + colGap * 0.5];
+      const chickenScaleOverflow = Math.max(0, CHICKEN_SIZE_SCALE - 1);
+      const extraColSpread = Math.round(mobileCardW * chickenScaleOverflow * 0.28);
+      colCenters = [colCenters[0] - extraColSpread, colCenters[1] + extraColSpread];
+      const firstRowY = Math.round(slotsBottom + Math.max(4, mobileCardH * 0.04));
+      const baseRowGap = Math.round(mobileCardH * 0.68);
+      const extraRowGap = Math.round(mobileCardH * chickenScaleOverflow * 0.72);
+      const rowGap = baseRowGap + extraRowGap;
       for (let i = 0; i < dynamicCardLayouts.length; i += 1) {
         const card = dynamicCardLayouts[i];
         const col = i % 2;
@@ -2904,20 +2920,6 @@ class Game {
         card.y = Math.round(firstRowY + row * rowGap);
       }
 
-      const maxBottom = Math.max(
-        ...LAYOUT.slots.map((slot) => slot.y + slot.h),
-        ...dynamicCardLayouts.map((card) => card.y + card.h)
-      );
-      const targetBottom = this.height + TRAY_BOTTOM_OFFSET;
-      const shiftY = Math.round(targetBottom - maxBottom);
-      if (Math.abs(shiftY) >= 1) {
-        for (const slot of LAYOUT.slots) {
-          slot.y += shiftY;
-        }
-        for (const card of dynamicCardLayouts) {
-          card.y += shiftY;
-        }
-      }
       if (Math.abs(MOBILE_BOTTOM_CLUSTER_Y_OFFSET) >= 1) {
         const mobileShiftY = Math.round(MOBILE_BOTTOM_CLUSTER_Y_OFFSET);
         for (const slot of LAYOUT.slots) {
@@ -2926,6 +2928,27 @@ class Game {
         for (const card of dynamicCardLayouts) {
           card.y += mobileShiftY;
         }
+      }
+    }
+
+    const trackBottom = LAYOUT.track.y + LAYOUT.track.h;
+    const trackToClusterGap = isMobilePortrait ? TRACK_TO_BOTTOM_CLUSTER_GAP_PORTRAIT : TRACK_TO_BOTTOM_CLUSTER_GAP_LANDSCAPE;
+    const targetTop = trackBottom + trackToClusterGap;
+    const clusterBottom = Math.max(
+      ...LAYOUT.slots.map((slot) => slot.y + slot.h),
+      ...dynamicCardLayouts.map((card) => card.y + card.h)
+    );
+    const clusterTop = Math.min(
+      ...LAYOUT.slots.map((slot) => slot.y),
+      ...dynamicCardLayouts.map((card) => card.y)
+    );
+    const anchorShiftY = Math.round(targetTop - clusterTop);
+    if (Math.abs(anchorShiftY) >= 1) {
+      for (const slot of LAYOUT.slots) {
+        slot.y += anchorShiftY;
+      }
+      for (const card of dynamicCardLayouts) {
+        card.y += anchorShiftY;
       }
     }
 
@@ -3637,8 +3660,26 @@ class Game {
     this.slotManager.free(slotIndex, unitId);
   }
 
+  getSlotVisualLiftY() {
+    if (!this.isMobilePortraitViewport()) {
+      return 0;
+    }
+    const slot = LAYOUT.slots[0];
+    if (!slot) {
+      return 0;
+    }
+    return Math.round(slot.h * 0.2);
+  }
+
   getSlotCenter(slotIndex) {
-    return this.slotManager.getCenter(slotIndex);
+    const center = this.slotManager.getCenter(slotIndex);
+    if (!center) {
+      return null;
+    }
+    return {
+      x: center.x,
+      y: center.y - this.getSlotVisualLiftY(),
+    };
   }
 
   handleUnitReturned(unit) {
@@ -4661,11 +4702,12 @@ class Game {
   }
 
   drawSlotState(ctx) {
+    const visualLiftY = this.getSlotVisualLiftY();
     for (const slot of LAYOUT.slots) {
       const image = this.slotCellImage;
       const fitSize = Math.round(Math.min(slot.w, slot.h) * 0.9);
       const drawX = Math.round(slot.x + (slot.w - fitSize) * 0.5);
-      const drawY = Math.round(slot.y + (slot.h - fitSize) * 0.5);
+      const drawY = Math.round(slot.y + (slot.h - fitSize) * 0.5 - visualLiftY);
       if (image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
         ctx.save();
         ctx.imageSmoothingEnabled = true;
@@ -5775,7 +5817,7 @@ class Game {
     const py = event.clientY - rect.top;
     const worldX = (px - this.viewportOffsetX) / this.viewportScale;
     const worldY = (py - this.viewportOffsetY) / this.viewportScale;
-    if (worldX < 0 || worldY < 0 || worldX > this.width || worldY > this.height) {
+    if (!Number.isFinite(worldX) || !Number.isFinite(worldY)) {
       return null;
     }
     return {

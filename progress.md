@@ -122,3 +122,90 @@ TODO next:
 - Verification: `node --check main.js` passed. Mobile artifact: `output/web-game/mobile-probe-8/shot.png` with empty slot row and birds below in 2-column stack.
 - 2026-04-01: pixel-tuning pass after user approval. Adjusted mobile portrait queue vertical placement (`firstRowY: slotsBottom + 4`, `rowGap: 124`) and tray corner radius (`r` cap 46 with 0.22 factor) for closer 1:1 spacing with the provided screenshot.
 - Verification: `output/web-game/mobile-probe-9/shot.png`.
+- 2026-04-01: unified portrait-first layout pass for mobile consistency across devices (user request: match reference composition and remove split mobile/desktop behavior drift).
+  - `main.js`: default mobile/desktop layout tunables were aligned to one reference baseline (`TRACK_Y_OFFSET`, slot spacing, tray offsets/scales, top UI offsets, queue spacing), so viewport class no longer picks different geometry sets.
+  - `main.js`: `getViewportAdaptiveTuning()` was rewritten to a portrait-first continuous profile (no pointer/desktop branch), keeping one scene style with only small aspect-based correction.
+  - `main.js`: `applyDebugLayout()` now always uses the same reference tunables and keeps portrait queue/slot composition deterministic; card size/row gap are derived from slot geometry for stable scaling on different phone widths.
+  - `main.js`: bottom cluster/tray anchoring now uses a blended viewport overflow model (`PORTRAIT_BOTTOM_ANCHOR_BLEND`) instead of hard desktop-vs-mobile anchors, preventing severe drift on tall devices while preserving the intended reference look.
+  - `main.js`: portrait tray underlay sizing was switched to the same blended anchor logic as queue/slots, so wood tray envelope follows cards consistently.
+- Verification (required `develop-web-game` + extra viewport matrix):
+  - `node --check main.js` passed.
+  - Required client runs passed:
+    - `output/web-game/mobile-layout-unified-sanity/shot-0.png`
+    - `output/web-game/mobile-layout-unified-sanity-2/shot-0.png`
+    - `output/web-game/mobile-layout-unified-sanity-3/shot-0.png`
+  - Multi-viewport visual validation artifacts:
+    - `output/web-game/mobile-layout-unified-matrix-3/360x800/shot.png`
+    - `output/web-game/mobile-layout-unified-matrix-3/390x844/shot.png`
+    - `output/web-game/mobile-layout-unified-matrix-3/430x932/shot.png`
+  - Residual console noise in matrix runs is expected 404 probes from optional assets/levels (`errors.json` in each viewport folder).
+- 2026-04-01: bottom-fill fix per user feedback. In `getBottomQueueUnderlayRect()` the portrait tray bottom is now clamped to at least `visibleWorldBottom + 12`, so wood underlay always covers the visual bottom edge (no residual green strip under the tray).
+- Verification:
+  - `node --check main.js` passed.
+  - Required client sanity: `output/web-game/mobile-bottom-fill-fix-sanity/shot-0.png`.
+  - Multi-viewport visual checks: `output/web-game/mobile-bottom-fill-fix-matrix/360x800/shot.png`, `430x932/shot.png`, `691x1280/shot.png` (bottom edge stays filled by tray wood).
+- 2026-04-01: tray anchor behavior fixed per repeated user feedback:
+  - `getBottomQueueUnderlayRect()` no longer uses active remaining cards to size tray bounds (uses stable `cardLayouts`), preventing tray jump when queue depletes.
+  - Bottom tray is now hard-anchored to viewport bottom for both portrait and landscape, with explicit off-screen overscan (`TRAY_OFFSCREEN_OVERSCAN`) so lower corners stay hidden and green holes do not appear.
+  - Horizontal tray overscan is now always applied, not portrait-only.
+  - `applyDebugLayout()` now also anchors slots+queue cluster to viewport bottom + overscan in all viewports, so tray/content remain locked and do not float upward.
+- Verification:
+  - `node --check main.js` passed.
+  - Required client run: `output/web-game/tray-anchor-fix-sanity/shot-0.png`.
+  - Desktop regression check at `1365x768`:
+    - `output/web-game/tray-anchor-fix-desktop/normal.png`
+    - `output/web-game/tray-anchor-fix-desktop/all-used.png`
+    - `output/web-game/tray-anchor-fix-desktop/all-used-fullpage.png`
+- 2026-04-01: changed bottom tray anchoring model from viewport-bottom anchor to track-relative anchor per user request.
+  - Added `TRACK_TO_BOTTOM_CLUSTER_GAP` and now position of slots+queue cluster is computed from `LAYOUT.track` bottom + fixed gap, so composition stays stable relative to central rails.
+  - `getBottomQueueUnderlayRect()` no longer derives tray bottom from viewport position; tray now follows content geometry (with fixed overscan) and remains stable when queue is depleted.
+  - Tray bounds use stable `cardLayouts` instead of only active cards, preventing vertical jumps when all queue cards become `used`.
+- Verification:
+  - `node --check main.js` passed.
+  - required client run: `output/web-game/tray-track-anchor-sanity/shot-0.png`.
+  - visual checks:
+    - `output/web-game/tray-track-anchor-mobile-430x932.png`
+    - `output/web-game/tray-track-anchor-mobile-430x932-used.png`
+    - `output/web-game/tray-track-anchor-desktop-1365x768.png`
+    - `output/web-game/tray-track-anchor-desktop-1365x768-used.png`
+- 2026-04-01: desktop/mobile micro-alignment pass per user feedback.
+  - Split track-to-bottom-cluster gap into per-orientation constants:
+    - `TRACK_TO_BOTTOM_CLUSTER_GAP_PORTRAIT = 186`
+    - `TRACK_TO_BOTTOM_CLUSTER_GAP_LANDSCAPE = 112`
+  - Landscape (PC) now uses tighter rail->tray spacing, so rail block is visually centered between top `Level` bar and bottom tray instead of being too high.
+  - Portrait keeps previous spacing.
+- Verification:
+  - `node --check main.js` passed.
+  - Desktop comparison artifact after tuning: `output/web-game/tray-gap-tune-desktop-1365x768.png`.
+  - Mobile guard artifact: `output/web-game/tray-gap-tune-mobile-430x932.png`.
+- 2026-04-01: no-bottom-hole hard guarantee across iPhone sizes.
+  - In `getBottomQueueUnderlayRect()`, tray bottom is now clamped to at least `visibleWorldBottom + TRAY_OFFSCREEN_OVERSCAN`.
+  - This guarantees the wood underlay always extends below the visible screen bottom, even when track-relative layout places content higher (iPhone 14/XR/Pro Max cases).
+- Verification:
+  - `node --check main.js` passed.
+  - required client run: `output/web-game/tray-no-hole-sanity/shot-0.png`.
+  - iPhone matrix screenshots:
+    - `output/web-game/tray-no-hole-iphone-se-2.png`
+    - `output/web-game/tray-no-hole-iphone-xr.png`
+    - `output/web-game/tray-no-hole-iphone-14.png`
+    - `output/web-game/tray-no-hole-iphone-14-pro-max.png`
+- 2026-04-01: fixed mobile bottom-panel tap regression after recent layout shifts.
+  - Root cause in `main.js`: `getPointerPosition()` rejected touches when converted world coordinates were outside `0..this.width/height`.
+  - After recent tray/queue anchoring updates, bottom cards can render below logical height (`y > this.height`), so taps on visible lower cards were dropped before hit-testing.
+  - Fix: removed hard world-bounds clipping and now return pointer coordinates for any finite transformed point.
+- Verification:
+  - `node --check main.js` passed.
+  - Required develop-web-game client sanity run: `output/web-game/mobile-tap-fix-sanity/shot-0.png`.
+  - Targeted mobile verification (390x844 viewport, click at computed front-card center) shows tap works again: units `0 -> 1` (`launching`). Artifact: `output/web-game/mobile-tap-fix-verify-390x844.png`.
+- 2026-04-01: increased queue bird spacing for mobile portrait to avoid overlap at enlarged bird scale.
+  - In `applyDebugLayout()` (`main.js`), queue columns now get additional spread based on `CHICKEN_SIZE_SCALE`.
+  - Queue row gap is now adaptive: `baseRowGap + extraRowGap`, where `extraRowGap` grows with `CHICKEN_SIZE_SCALE - 1`.
+- Verification: `node --check main.js` passed; visual sanity artifact: `output/web-game/queue-spacing-mobile/shot-0.png`.
+- 2026-04-01: layout model switched to track-driven horizontal adaptivity.
+  - Central rail block width is now derived from visible world width with side margins (`TRACK_SIDE_MARGIN_RATIO = 0.05`) and a frame-outset correction (`TRACK_FRAME_OUTSET`), instead of legacy fixed playfield scaling.
+  - Top UI is now anchored from the track: timer panel Y is computed from `track.y` with a gap, left/right top buttons are positioned relative to track edges.
+  - Right top button positioning now derives from track geometry through `COINS_UI.rightMargin` recomputation.
+  - Bottom cluster remains track-anchored via existing `trackBottom + TRACK_TO_BOTTOM_CLUSTER_GAP_*` flow, so top+center+bottom now move as one system.
+- Verification:
+  - `node --check main.js` passed.
+  - Visual sanity artifact after change: `output/web-game/track-width-adaptive/shot-0.png`.
