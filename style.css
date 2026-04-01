@@ -12,7 +12,10 @@ body {
 body {
   display: grid;
   place-items: center;
-  background: #ffffff;
+  background-color: #a3db14;
+  background-image: url("ui/bg.jpg");
+  background-repeat: repeat;
+  background-size: 500px 500px;
   overflow: hidden;
   padding:
     env(safe-area-inset-top, 0)

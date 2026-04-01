@@ -274,8 +274,8 @@ let TOP_PANEL_FONT_SIZE = 67;
 let TOP_LEVEL_PANEL_SCALE = 1.2;
 let TOP_COINS_PANEL_SCALE = 1.2;
 let BACK_BUTTON_SCALE = 1.2;
-let TRACK_Y_OFFSET = 18;
-let PLAYFIELD_SCALE = 0.86;
+let TRACK_Y_OFFSET = 50;
+let PLAYFIELD_SCALE = 0.88;
 let SLOT_SIZE_SCALE = 1.15;
 let SLOT_Y_OFFSET = -63;
 let TOP_UI_Y_OFFSET = 65;
@@ -294,6 +294,15 @@ const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
 let BOARD_FILL_COLOR = "#6aa93a";
+const RAILWAY_SOURCE_SIZE = { w: 401, h: 407 };
+const RAILWAY_PATH_NORMALIZED = {
+  x: 28.5 / RAILWAY_SOURCE_SIZE.w,
+  y: 22 / RAILWAY_SOURCE_SIZE.h,
+  w: 341.5 / RAILWAY_SOURCE_SIZE.w,
+  h: 320 / RAILWAY_SOURCE_SIZE.h,
+  // Tuned to the visual center of the lane in ui/railway.png.
+  r: 50 / RAILWAY_SOURCE_SIZE.w,
+};
 const VICTORY_ZOOM_TARGET = 1.12;
 const VICTORY_ZOOM_SPEED = 3.2;
 const VICTORY_CONFETTI_DURATION = 1.8;
@@ -384,8 +393,8 @@ const DEBUG_DEFAULTS = {
   topLevelPanelScale: 1.2,
   topCoinsPanelScale: 1.2,
   backButtonScale: 1.2,
-  trackYOffset: 18,
-  playfieldScale: 0.86,
+  trackYOffset: 50,
+  playfieldScale: 0.88,
   slotSizeScale: 1.15,
   slotYOffset: -63,
   topUiYOffset: 65,
@@ -943,6 +952,24 @@ function createRoundedRectPath(x, y, w, h, r, samplesPerArc = 18) {
   return points;
 }
 
+function getRailwayConveyorRect(trackRect) {
+  const framePad = 40;
+  const frame = {
+    x: trackRect.x - framePad,
+    y: trackRect.y - framePad,
+    w: trackRect.w + framePad * 2,
+    h: trackRect.h + framePad * 2,
+  };
+  const x = Math.round(frame.x + frame.w * RAILWAY_PATH_NORMALIZED.x);
+  const y = Math.round(frame.y + frame.h * RAILWAY_PATH_NORMALIZED.y);
+  const w = Math.max(120, Math.round(frame.w * RAILWAY_PATH_NORMALIZED.w));
+  const h = Math.max(120, Math.round(frame.h * RAILWAY_PATH_NORMALIZED.h));
+  const radiusByWidth = frame.w * RAILWAY_PATH_NORMALIZED.r;
+  const radiusByHeight = frame.h * (50 / RAILWAY_SOURCE_SIZE.h);
+  const r = Math.max(10, Math.round(Math.min(radiusByWidth, radiusByHeight)));
+  return { x, y, w, h, r };
+}
+
 class Block {
   constructor(id, col, row, color) {
     this.id = id;
@@ -979,7 +1006,7 @@ class Conveyor {
   }
 
   setTrackRect(trackRect, spawnPoint = LAYOUT.spawnPoint) {
-    this.trackRect = { ...trackRect };
+    this.trackRect = getRailwayConveyorRect(trackRect);
     this.path = createRoundedRectPath(
       this.trackRect.x,
       this.trackRect.y,
@@ -1659,6 +1686,16 @@ class Game {
     this.losePopupImage = new Image();
     this.losePopupImage.src = "ui/lose_popup_space_ref.png";
     this.losePopupImage.decoding = "sync";
+    this.woodImage = new Image();
+    this.woodImage.src = "ui/wood.png";
+    this.woodImage.decoding = "sync";
+    this.railwayImage = new Image();
+    this.railwayImage.src = "ui/railway.png";
+    this.railwayImage.decoding = "sync";
+    this.backdropImage = new Image();
+    this.backdropImage.src = "ui/bg.jpg";
+    this.backdropImage.decoding = "sync";
+    this.generatedBackdropCache = null;
 
     this.sprites = {
       holeTile: null,
@@ -1671,6 +1708,7 @@ class Game {
       grassTile: null,
       grassPattern: null,
       dirtPattern: null,
+      woodPattern: null,
     };
 
     const staticSceneLayer = createBufferCanvas(this.width, this.height, false);
@@ -1826,6 +1864,20 @@ class Game {
     this.losePopupImage.onload = () => {
       this.invalidate(false);
     };
+    this.woodImage.onload = () => {
+      this.sprites.woodPattern = this.createWoodPatternTile();
+      this.rebuildStaticSceneLayer();
+      this.invalidate(false);
+    };
+    this.railwayImage.onload = () => {
+      this.rebuildStaticSceneLayer();
+      this.invalidate(false);
+    };
+    this.backdropImage.onload = () => {
+      this.generatedBackdropCache = null;
+      this.rebuildStaticSceneLayer();
+      this.invalidate(false);
+    };
 
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => this.invalidate(false));
@@ -1858,6 +1910,7 @@ class Game {
       boardTheme.dirtPalette || ["#b18052", "#ba8a5b", "#c89a67", "#a9784a", "#d1a874"],
       boardTheme.dirtShade || "rgba(64, 40, 22, 0.2)"
     );
+    this.sprites.woodPattern = this.createWoodPatternTile();
     this.rebuildStaticSceneLayer();
   }
 
@@ -1923,6 +1976,28 @@ class Game {
     return tile;
   }
 
+  createWoodPatternTile() {
+    const image = this.woodImage;
+    if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+      return null;
+    }
+    const tile = document.createElement("canvas");
+    const tileW = 192;
+    const tileH = 192;
+    tile.width = tileW;
+    tile.height = tileH;
+    const tileCtx = tile.getContext("2d", { alpha: true });
+    if (!tileCtx) {
+      return null;
+    }
+    const inset = 18;
+    const srcW = Math.max(8, image.naturalWidth - inset * 2);
+    const srcH = Math.max(8, image.naturalHeight - inset * 2);
+    tileCtx.imageSmoothingEnabled = true;
+    tileCtx.drawImage(image, inset, inset, srcW, srcH, 0, 0, tileW, tileH);
+    return tile;
+  }
+
   rebuildStaticSceneLayer() {
     if (!this.staticSceneCtx) {
       return;
@@ -1985,6 +2060,120 @@ class Game {
     ctx.restore();
   }
 
+  drawFieldWoodUnderlay(ctx) {
+    const fieldRect = {
+      x: LAYOUT.fieldX - 8,
+      y: LAYOUT.fieldY - 8,
+      w: LAYOUT.fieldCols * LAYOUT.fieldStep + 16,
+      h: LAYOUT.fieldRows * LAYOUT.fieldStep + 16,
+      r: 26,
+    };
+    ctx.save();
+    roundedRect(ctx, fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h, fieldRect.r);
+    ctx.clip();
+
+    const woodPatternTile = this.sprites.woodPattern;
+    const woodPattern = woodPatternTile ? ctx.createPattern(woodPatternTile, "repeat") : null;
+    if (woodPattern) {
+      ctx.fillStyle = woodPattern;
+      ctx.fillRect(fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h);
+    } else {
+      ctx.fillStyle = "#8f5127";
+      ctx.fillRect(fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h);
+    }
+
+    const glaze = ctx.createLinearGradient(0, fieldRect.y, 0, fieldRect.y + fieldRect.h);
+    glaze.addColorStop(0, "rgba(255, 255, 255, 0.06)");
+    glaze.addColorStop(0.5, "rgba(255, 255, 255, 0)");
+    glaze.addColorStop(1, "rgba(0, 0, 0, 0.14)");
+    ctx.fillStyle = glaze;
+    ctx.fillRect(fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h);
+    ctx.restore();
+
+    ctx.save();
+    roundedRect(ctx, fieldRect.x + 0.5, fieldRect.y + 0.5, fieldRect.w - 1, fieldRect.h - 1, fieldRect.r - 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(45, 22, 10, 0.45)";
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawRailwayFrame(ctx, frameRect) {
+    const image = this.railwayImage;
+    if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+      return false;
+    }
+
+    const imageAspect = image.naturalWidth / image.naturalHeight;
+    const targetAspect = frameRect.w / frameRect.h;
+    let drawW = frameRect.w;
+    let drawH = frameRect.h;
+    if (targetAspect > imageAspect) {
+      drawH = drawW / imageAspect;
+    } else {
+      drawW = drawH * imageAspect;
+    }
+    const drawX = Math.round(frameRect.x + (frameRect.w - drawW) * 0.5);
+    const drawY = Math.round(frameRect.y + (frameRect.h - drawH) * 0.5);
+    const pixelW = Math.max(1, Math.round(drawW));
+    const pixelH = Math.max(1, Math.round(drawH));
+
+    ctx.save();
+    const prevSmoothing = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, drawX, drawY, pixelW, pixelH);
+    ctx.imageSmoothingEnabled = prevSmoothing;
+    ctx.restore();
+    return true;
+  }
+
+  getBottomQueueUnderlayRect() {
+    const queueCards =
+      this.cardManager && Array.isArray(this.cardManager.cardLayouts) && this.cardManager.cardLayouts.length > 0
+        ? this.cardManager.cardLayouts
+        : LAYOUT.cards;
+    const elements = [...LAYOUT.slots, ...queueCards];
+    if (!elements.length) {
+      return null;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const item of elements) {
+      minX = Math.min(minX, item.x);
+      minY = Math.min(minY, item.y);
+      maxX = Math.max(maxX, item.x + item.w);
+      maxY = Math.max(maxY, item.y + item.h);
+    }
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+      return null;
+    }
+
+    const padX = 24;
+    const padTop = 20;
+    const padBottom = 30;
+    const x = clamp(Math.floor(minX - padX), 0, this.width);
+    const y = clamp(Math.floor(minY - padTop), 0, this.height);
+    const right = clamp(Math.ceil(maxX + padX), 0, this.width);
+    const bottom = clamp(Math.ceil(maxY + padBottom), 0, this.height);
+    const w = Math.max(0, right - x);
+    const h = Math.max(0, bottom - y);
+    if (w <= 0 || h <= 0) {
+      return null;
+    }
+
+    return {
+      x,
+      y,
+      w,
+      h,
+      r: Math.min(30, Math.floor(Math.min(w, h) * 0.16)),
+    };
+  }
+
   drawGrassBackdrop(ctx, rect) {
     const boardTheme = CURRENT_THEME.board || {};
     this.drawTiledBackdrop(
@@ -2018,7 +2207,90 @@ class Game {
 
   drawViewportBackdrop(ctx) {
     const worldRect = this.getViewportWorldRect();
-    this.drawGrassBackdrop(ctx, worldRect);
+    this.drawGeneratedBackdrop(ctx, worldRect);
+  }
+
+  createSeededRandom(seed) {
+    let state = (seed >>> 0) || 0x6d2b79f5;
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 0x100000000;
+    };
+  }
+
+  getGeneratedBackdropCanvas(targetW, targetH) {
+    const width = Math.max(1, Math.ceil(targetW));
+    const height = Math.max(1, Math.ceil(targetH));
+    const image = this.backdropImage;
+    if (!image || !image.complete || !image.naturalWidth || !image.naturalHeight) {
+      return null;
+    }
+
+    const cached = this.generatedBackdropCache;
+    if (cached && cached.width === width && cached.height === height) {
+      return cached.canvas;
+    }
+
+    const layer = createBufferCanvas(width, height, false);
+    const out = layer.canvas;
+    const outCtx = layer.ctx;
+    outCtx.imageSmoothingEnabled = true;
+
+    const imgW = image.naturalWidth;
+    const imgH = image.naturalHeight;
+    const rand = this.createSeededRandom((width * 73856093) ^ (height * 19349663) ^ (imgW * 83492791));
+
+    const phaseX = Math.floor(rand() * imgW);
+    const phaseY = Math.floor(rand() * imgH);
+    for (let y = -phaseY; y < height; y += imgH) {
+      for (let x = -phaseX; x < width; x += imgW) {
+        outCtx.drawImage(image, x, y, imgW, imgH);
+      }
+    }
+
+    const patchCount = Math.max(40, Math.round((width * height) / 28000));
+    for (let i = 0; i < patchCount; i += 1) {
+      const patch = Math.max(56, Math.round(56 + rand() * 104));
+      const srcX = Math.floor(rand() * Math.max(1, imgW - patch));
+      const srcY = Math.floor(rand() * Math.max(1, imgH - patch));
+      const dstX = Math.floor(rand() * Math.max(1, width - patch));
+      const dstY = Math.floor(rand() * Math.max(1, height - patch));
+      const rotate = rand() < 0.08;
+      const flipX = rand() < 0.2;
+      const flipY = rand() < 0.12;
+
+      outCtx.save();
+      outCtx.globalAlpha = 0.32 + rand() * 0.22;
+      outCtx.translate(dstX + patch * 0.5, dstY + patch * 0.5);
+      outCtx.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+      if (rotate) {
+        outCtx.rotate((Math.PI / 2) * (1 + Math.floor(rand() * 3)));
+      }
+      outCtx.drawImage(
+        image,
+        srcX,
+        srcY,
+        patch,
+        patch,
+        -patch * 0.5,
+        -patch * 0.5,
+        patch,
+        patch
+      );
+      outCtx.restore();
+    }
+
+    this.generatedBackdropCache = { width, height, canvas: out };
+    return out;
+  }
+
+  drawGeneratedBackdrop(ctx, rect) {
+    const generated = this.getGeneratedBackdropCanvas(rect.w, rect.h);
+    if (generated) {
+      ctx.drawImage(generated, rect.x, rect.y, rect.w, rect.h);
+      return;
+    }
+    this.drawGrassBackdrop(ctx, rect);
   }
 
   updateViewportTransform() {
@@ -3570,11 +3842,7 @@ class Game {
 
   drawBackground(ctx) {
     const trackTheme = CURRENT_THEME.track || {};
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, this.width, this.height);
-    const board = LAYOUT.boardMask;
-
-    this.drawGrassBackdrop(ctx, board);
+    this.drawGeneratedBackdrop(ctx, { x: 0, y: 0, w: this.width, h: this.height });
 
     // Wood ring around track.
     const outerWood = {
@@ -3591,6 +3859,20 @@ class Game {
       h: LAYOUT.track.h - 80,
       r: Math.max(8, LAYOUT.track.r - 34),
     };
+
+    // Prefer pixel-art railway sprite for a closer 1:1 visual match.
+    if (this.drawRailwayFrame(ctx, outerWood)) {
+      return;
+    }
+
+    // Fallback center fill for procedural rails.
+    ctx.save();
+    roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
+    ctx.clip();
+    ctx.fillStyle = "#8b5a2b";
+    ctx.fillRect(innerWood.x, innerWood.y, innerWood.w, innerWood.h);
+    ctx.restore();
+
     ctx.save();
     ctx.shadowColor = COLORS.sceneShadow;
     ctx.shadowBlur = 36;
@@ -3606,13 +3888,6 @@ class Game {
     ctx.fillStyle = woodGrad;
     // roundedRect() starts a new path internally, so fill the outer wood first...
     ctx.fill();
-    ctx.restore();
-
-    // Fill inside the rails using the same tiled style as the outer backdrop, but brown.
-    ctx.save();
-    roundedRect(ctx, innerWood.x, innerWood.y, innerWood.w, innerWood.h, innerWood.r);
-    ctx.clip();
-    this.drawDirtBackdrop(ctx, innerWood);
     ctx.restore();
 
     // Sleepers along the path.
@@ -3976,7 +4251,39 @@ class Game {
   }
 
   drawBottomCleanup(ctx) {
-    void ctx;
+    const rect = this.getBottomQueueUnderlayRect();
+    if (!rect) {
+      return;
+    }
+
+    ctx.save();
+    roundedRect(ctx, rect.x, rect.y, rect.w, rect.h, rect.r);
+    ctx.clip();
+
+    const woodPatternTile = this.sprites.woodPattern;
+    const woodPattern = woodPatternTile ? ctx.createPattern(woodPatternTile, "repeat") : null;
+    if (woodPattern) {
+      ctx.fillStyle = woodPattern;
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    } else {
+      ctx.fillStyle = "#8f5127";
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+
+    const glaze = ctx.createLinearGradient(0, rect.y, 0, rect.y + rect.h);
+    glaze.addColorStop(0, "rgba(255, 255, 255, 0.12)");
+    glaze.addColorStop(0.42, "rgba(255, 255, 255, 0)");
+    glaze.addColorStop(1, "rgba(0, 0, 0, 0.2)");
+    ctx.fillStyle = glaze;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+
+    ctx.save();
+    roundedRect(ctx, rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1, Math.max(4, rect.r - 0.5));
+    ctx.strokeStyle = "rgba(49, 24, 12, 0.52)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
   }
 
   drawAmmoOnBlock(ctx, x, y, value, baseFontSize = 30) {
