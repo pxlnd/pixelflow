@@ -5434,15 +5434,16 @@ class Game {
     }
 
     const now = performance.now();
-    const pulsePhase = ((now * 0.00135) % 1 + 1) % 1;
-    const riseWindow = 0.16;
-    const pulseSpike =
-      pulsePhase < riseWindow
-        ? easeOutCubic(pulsePhase / riseWindow)
-        : Math.pow(1 - (pulsePhase - riseWindow) / (1 - riseWindow), 1.9);
-    const pulse = clamp(0.22 + 0.78 * pulseSpike, 0, 1);
-
-    for (const target of targets) {
+    const waveDurationMs = 1500;
+    const maxWaveIndex = Math.max(1, targets.length - 1);
+    const wavePhase = ((now % waveDurationMs) + waveDurationMs) % waveDurationMs / waveDurationMs;
+    const waveHead = wavePhase * maxWaveIndex;
+    const waveWidth = 0.42;
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      const distanceFromWave = Math.abs(index - waveHead);
+      const pulseSpike = Math.exp(-(distanceFromWave * distanceFromWave) / Math.max(0.01, waveWidth));
+      const pulse = clamp(0.08 + 0.92 * pulseSpike, 0, 1);
       const colorRgb = BLOCK_COLOR_TO_RGB[target.color] || BLOCK_COLOR_TO_RGB.green;
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
