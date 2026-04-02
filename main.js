@@ -573,6 +573,7 @@ const DEBUG_IMAGE_GRID_MIN = 4;
 const DEBUG_IMAGE_GRID_MAX = 40;
 const DEBUG_IMAGE_SCALE_MIN = 0.5;
 const DEBUG_IMAGE_SCALE_MAX = 3;
+const DEBUG_IMAGE_OFFSET_Y_DEFAULT = -37;
 
 const BLOCK_COLOR_CONFIG = {
   green: {
@@ -875,6 +876,8 @@ function syncThemeGlobals(themeConfig) {
   COLORS = { ...DEFAULT_COLORS, ...(CURRENT_THEME.colors || {}) };
   CONFETTI_COLORS = [...(CURRENT_THEME.confettiColors || ["#ff5f5f", "#ffd166", "#6ee7b7", "#60a5fa", "#f9a8d4", "#c4b5fd"])];
 }
+
+const STABLE_LAYOUT_ANCHOR = createBaseLayout(cloneLevelLayout(getLevelConfig(DEFAULT_LEVEL_ID).layout));
 
 function getThemeAsset(key, fallbackPath) {
   const value = CURRENT_THEME.assets?.[key];
@@ -1679,30 +1682,33 @@ class CardManager {
     };
   }
 
-  isPointOnCard(card, x, y) {
+  isPointOnCard(card, x, y, options = {}) {
+    const visualLiftY = Number.isFinite(options.visualLiftY) ? options.visualLiftY : 0;
     const center = this.getCardPigCenter(card);
-    const onPig = Math.hypot(x - center.x, y - center.y) <= SHOOTER_HIT_RADIUS;
+    const visualCenterY = center.y - visualLiftY;
+    const onPig = Math.hypot(x - center.x, y - visualCenterY) <= SHOOTER_HIT_RADIUS;
     const onCardRect =
       x >= card.x - CARD_HITBOX_PADDING_X &&
       x <= card.x + card.w + CARD_HITBOX_PADDING_X &&
-      y >= card.y - CARD_HITBOX_PADDING_TOP &&
-      y <= card.y + card.h + CARD_HITBOX_PADDING_BOTTOM;
+      y >= card.y - visualLiftY - CARD_HITBOX_PADDING_TOP &&
+      y <= card.y - visualLiftY + card.h + CARD_HITBOX_PADDING_BOTTOM;
     if (card.row === 0) {
       return onCardRect;
     }
     return onPig || onCardRect;
   }
 
-  findTapTarget(x, y) {
+  findTapTarget(x, y, options = {}) {
+    const visualLiftY = Number.isFinite(options.visualLiftY) ? options.visualLiftY : 0;
     let best = null;
     let bestDistance = Infinity;
     for (const lane of this.getFrontLaneIds()) {
       const activeCard = this.getActiveFrontCardInLane(lane);
-      if (!activeCard || !this.isPointOnCard(activeCard, x, y)) {
+      if (!activeCard || !this.isPointOnCard(activeCard, x, y, { visualLiftY })) {
         continue;
       }
       const center = this.getCardPigCenter(activeCard);
-      const score = Math.hypot(x - center.x, y - center.y);
+      const score = Math.hypot(x - center.x, y - (center.y - visualLiftY));
       if (score < bestDistance) {
         bestDistance = score;
         best = activeCard;
@@ -1924,6 +1930,7 @@ class Game {
     this.debugContentSelectorsBound = false;
     this.debugGeneratedSourceImage = null;
     this.debugGeneratedBaseLevelId = DEFAULT_LEVEL_ID;
+    this.debugImageSettingsByLevel = {};
     this.debugLevelsDirHandle = null;
     this.debugLevelsDirName = "";
     this.debugSaveTargetDirty = false;
@@ -2435,7 +2442,8 @@ class Game {
     const vw = Math.max(1, window.innerWidth || this.canvas.clientWidth || LOGICAL_WIDTH);
     const vh = Math.max(1, window.innerHeight || this.canvas.clientHeight || LOGICAL_HEIGHT);
     const isPortrait = vh >= vw;
-    const usePortraitTray = isPortrait;
+    // Keep tray geometry identical across orientations (match portrait/mobile behavior).
+    const usePortraitTray = true;
 
     const padTop = usePortraitTray ? 26 : 20;
     const padBottom = usePortraitTray ? 28 : 30;
@@ -2784,6 +2792,7 @@ class Game {
   }
 
   applyDebugLayout() {
+    const layoutAnchor = STABLE_LAYOUT_ANCHOR;
     const tuning = this.getViewportAdaptiveTuning();
     const isMobilePortrait = this.isMobilePortraitViewport();
     const globalLayoutShiftY = Math.round(this.height * GLOBAL_LAYOUT_Y_SHIFT_RATIO);
@@ -2795,7 +2804,7 @@ class Game {
     const effectiveSlotYOffset = SLOT_Y_OFFSET + tuning.slotYOffsetAdd;
     const effectiveCardYOffsetAll = CARD_Y_OFFSET_ALL + tuning.cardYOffsetAllAdd;
     const effectiveCardOffsetMul = tuning.cardOffsetMul;
-    const effectiveQueueSpacingX = QUEUE_SPACING_X_MOBILE;
+    const effectiveQueueSpacingX = isMobilePortrait ? QUEUE_SPACING_X_MOBILE : QUEUE_SPACING_X_DESKTOP;
     const effectiveCardLaneSpacingMul = tuning.cardLaneSpacingMul * effectiveQueueSpacingX;
     const effectiveSlotSpacingX = SLOT_SPACING_X_MOBILE;
     const effectiveBackButtonScale = BACK_BUTTON_SCALE * tuning.backButtonScaleMul;
@@ -2814,13 +2823,13 @@ class Game {
     const trackSideMargin = Math.max(16, Math.round(horizontalBoundsW * TRACK_SIDE_MARGIN_RATIO));
     const targetOuterTrackW = Math.max(120, Math.round(horizontalBoundsW - trackSideMargin * 2));
     const targetTrackW = Math.max(120, targetOuterTrackW - TRACK_FRAME_OUTSET * 2);
-    const trackScale = Math.max(0.0001, targetTrackW / BASE_LAYOUT.track.w);
-    const trackAspect = BASE_LAYOUT.track.h / BASE_LAYOUT.track.w;
+    const trackScale = Math.max(0.0001, targetTrackW / layoutAnchor.track.w);
+    const trackAspect = layoutAnchor.track.h / layoutAnchor.track.w;
     const trackCenterX = horizontalBoundsX + horizontalBoundsW * 0.5;
-    const baseTrackCenterY = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
+    const baseTrackCenterY = layoutAnchor.track.y + layoutAnchor.track.h * 0.5 + effectiveTrackYOffset;
     LAYOUT.track.w = targetTrackW;
     LAYOUT.track.h = Math.max(120, Math.round(targetTrackW * trackAspect));
-    LAYOUT.track.r = Math.max(10, Math.round(BASE_LAYOUT.track.r * trackScale));
+    LAYOUT.track.r = Math.max(10, Math.round(layoutAnchor.track.r * trackScale));
     LAYOUT.track.x = Math.round(trackCenterX - LAYOUT.track.w * 0.5);
     LAYOUT.track.y = Math.round(baseTrackCenterY - LAYOUT.track.h * 0.5);
 
@@ -2837,21 +2846,24 @@ class Game {
     COINS_UI.rightMargin = Math.round(this.width - (LAYOUT.track.x + LAYOUT.track.w) + sideButtonGap);
     this.restartButtonRect = this.getRestartButtonRect();
 
-    const baseTrackCenterX = BASE_LAYOUT.track.x + BASE_LAYOUT.track.w * 0.5;
-    const baseTrackCenterYForSpawn = BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5 + effectiveTrackYOffset;
-    const baseSpawnOffsetX = BASE_LAYOUT.spawnPoint.x - baseTrackCenterX;
-    const baseSpawnOffsetY = BASE_LAYOUT.spawnPoint.y - (BASE_LAYOUT.track.y + BASE_LAYOUT.track.h * 0.5);
+    const baseTrackCenterX = layoutAnchor.track.x + layoutAnchor.track.w * 0.5;
+    const baseTrackCenterYForSpawn = layoutAnchor.track.y + layoutAnchor.track.h * 0.5 + effectiveTrackYOffset;
+    const baseSpawnOffsetX = layoutAnchor.spawnPoint.x - baseTrackCenterX;
+    const baseSpawnOffsetY = layoutAnchor.spawnPoint.y - (layoutAnchor.track.y + layoutAnchor.track.h * 0.5);
     LAYOUT.spawnPoint.x = Math.round(trackCenterX + baseSpawnOffsetX * trackScale);
     LAYOUT.spawnPoint.y = Math.round(baseTrackCenterYForSpawn + baseSpawnOffsetY * trackScale);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
 
-    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * trackScale));
-    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * trackScale));
+    const runtimeDebugImageScale = this.getDebugImageScale();
+    LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * trackScale * runtimeDebugImageScale));
+    LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * trackScale * runtimeDebugImageScale));
     const fieldCenterX = LAYOUT.track.x + LAYOUT.track.w * 0.5;
-    const debugLevelFieldOffsetY = clampDebugImageOffsetY(CURRENT_LEVEL?.pixelArt?.offsetY ?? 0);
-    const fieldCenterY = LAYOUT.track.y + LAYOUT.track.h * 0.5 - LAYOUT.track.h * FIELD_CENTERING_UP_RATIO + debugLevelFieldOffsetY;
-    const fieldW = BASE_LAYOUT.fieldCols * LAYOUT.fieldStep;
-    const fieldH = BASE_LAYOUT.fieldRows * LAYOUT.fieldStep;
+    const levelFieldOffsetY = clampDebugImageOffsetY(CURRENT_LEVEL?.pixelArt?.offsetY ?? 0);
+    const runtimeDebugImageOffsetY = this.getDebugImageOffsetY();
+    const fieldCenterY =
+      LAYOUT.track.y + LAYOUT.track.h * 0.5 - LAYOUT.track.h * FIELD_CENTERING_UP_RATIO + levelFieldOffsetY + runtimeDebugImageOffsetY;
+    const fieldW = LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const fieldH = LAYOUT.fieldRows * LAYOUT.fieldStep;
     LAYOUT.fieldX = Math.round(fieldCenterX - fieldW * 0.5);
     LAYOUT.fieldY = Math.round(fieldCenterY - fieldH * 0.5);
 
@@ -2862,7 +2874,7 @@ class Game {
     }
 
     for (let i = 0; i < LAYOUT.slots.length; i++) {
-      const baseSlot = BASE_LAYOUT.slots[i];
+      const baseSlot = layoutAnchor.slots[i];
       const slot = LAYOUT.slots[i];
       if (!baseSlot || !slot) {
         continue;
@@ -2878,7 +2890,7 @@ class Game {
       slot.y = Math.round(centerY - h * 0.5);
     }
 
-    const dynamicCardLayouts = BASE_LAYOUT.cards.map((baseCard, index) => ({
+    const dynamicCardLayouts = layoutAnchor.cards.map((baseCard, index) => ({
       ...baseCard,
       x: Math.round(fieldCenterX + (baseCard.x + baseCard.w * 0.5 - fieldCenterX) * effectiveCardLaneSpacingMul - baseCard.w * 0.5),
       y: Math.round(baseCard.y + effectiveCardYOffsetAll + getCardYOffsetByIndex(index) * effectiveCardOffsetMul),
@@ -2930,9 +2942,35 @@ class Game {
         }
       }
     }
+    else {
+      // Desktop: preserve top row position, but increase row spacing when chicken scale grows
+      // so queue rows don't visually overlap.
+      const chickenScaleOverflow = Math.max(0, CHICKEN_SIZE_SCALE - 1);
+      if (chickenScaleOverflow > 0.001) {
+        const topRowLayouts = dynamicCardLayouts.filter((card) => card.row === 0);
+        const firstLane = topRowLayouts.length > 0 ? topRowLayouts[0].lane : 0;
+        const laneLayouts = dynamicCardLayouts
+          .filter((card) => card.lane === firstLane)
+          .sort((a, b) => a.row - b.row);
+        const sampleCard = dynamicCardLayouts[0];
+        const sampleHeight = Math.max(1, Math.round(sampleCard?.h || 200));
+        const baseRowGap = laneLayouts.length >= 2
+          ? Math.max(1, Math.round(laneLayouts[1].y - laneLayouts[0].y))
+          : Math.max(1, Math.round(sampleHeight * 1.01));
+        const extraRowGap = Math.round(sampleHeight * chickenScaleOverflow * 0.9);
+        const rowGap = baseRowGap + extraRowGap;
+        const topRowY = topRowLayouts.length > 0
+          ? Math.min(...topRowLayouts.map((card) => card.y))
+          : Math.round(sampleCard?.y || 0);
+
+        for (const card of dynamicCardLayouts) {
+          card.y = Math.round(topRowY + card.row * rowGap);
+        }
+      }
+    }
 
     const trackBottom = LAYOUT.track.y + LAYOUT.track.h;
-    const trackToClusterGap = isMobilePortrait ? TRACK_TO_BOTTOM_CLUSTER_GAP_PORTRAIT : TRACK_TO_BOTTOM_CLUSTER_GAP_LANDSCAPE;
+    const trackToClusterGap = TRACK_TO_BOTTOM_CLUSTER_GAP_PORTRAIT;
     const targetTop = trackBottom + trackToClusterGap;
     const clusterBottom = Math.max(
       ...LAYOUT.slots.map((slot) => slot.y + slot.h),
@@ -2984,6 +3022,7 @@ class Game {
     const nextLevelId = this.getValidLevelId(levelId);
     syncLevelGlobals(getLevelConfig(nextLevelId));
     this.currentLevelId = nextLevelId;
+    this.syncDebugImageInputsForLevel(this.currentLevelId);
     this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
     this.cardManager = new CardManager(LAYOUT.cards, BOTTOM_QUEUE_CARD_COUNT);
@@ -3063,6 +3102,7 @@ class Game {
       cardYOffset2: CARD_Y_OFFSET_2,
       cardYOffset3: CARD_Y_OFFSET_3,
       cardYOffset4: CARD_Y_OFFSET_4,
+      debugImageSettingsByLevel: cloneData(this.debugImageSettingsByLevel || {}),
       levelId: this.getValidLevelId(this.currentLevelId),
       themeId: this.getValidThemeId(this.currentThemeId),
     };
@@ -3111,6 +3151,22 @@ class Game {
     CARD_Y_OFFSET_2 = clamp(Number(settings.cardYOffset2 ?? DEBUG_DEFAULTS.cardYOffset2), -260, 260);
     CARD_Y_OFFSET_3 = clamp(Number(settings.cardYOffset3 ?? DEBUG_DEFAULTS.cardYOffset3), -260, 260);
     CARD_Y_OFFSET_4 = clamp(Number(settings.cardYOffset4 ?? DEBUG_DEFAULTS.cardYOffset4), -260, 260);
+    this.debugImageSettingsByLevel = {};
+    if (settings.debugImageSettingsByLevel && typeof settings.debugImageSettingsByLevel === "object") {
+      for (const [levelId, value] of Object.entries(settings.debugImageSettingsByLevel)) {
+        if (!value || typeof value !== "object") {
+          continue;
+        }
+        const key = String(levelId || "").trim();
+        if (!key) {
+          continue;
+        }
+        this.debugImageSettingsByLevel[key] = {
+          imageScale: clampDebugImageScale(value.imageScale ?? 1),
+          offsetY: clampDebugImageOffsetY(value.offsetY ?? DEBUG_IMAGE_OFFSET_Y_DEFAULT),
+        };
+      }
+    }
     this.currentLevelId = this.getValidLevelId(settings.levelId ?? DEBUG_DEFAULTS.levelId);
     this.currentThemeId = this.getValidThemeId(settings.themeId ?? DEBUG_DEFAULTS.themeId);
   }
@@ -3661,14 +3717,25 @@ class Game {
   }
 
   getSlotVisualLiftY() {
-    if (!this.isMobilePortraitViewport()) {
-      return 0;
-    }
     const slot = LAYOUT.slots[0];
     if (!slot) {
       return 0;
     }
-    return Math.round(slot.h * 0.2);
+    if (this.isMobilePortraitViewport()) {
+      return Math.round(slot.h * 0.712);
+    }
+    return Math.round(slot.h * 0.712);
+  }
+
+  getQueueVisualLiftY() {
+    const slot = LAYOUT.slots[0];
+    if (!slot) {
+      return 0;
+    }
+    if (this.isMobilePortraitViewport()) {
+      return Math.round(slot.h * 0.52);
+    }
+    return Math.round(slot.h * 0.44);
   }
 
   getSlotCenter(slotIndex) {
@@ -4854,10 +4921,11 @@ class Game {
 
   drawQueueChicken(ctx, card, queueScale = 1) {
     const center = this.getCardPigCenter(card);
+    const queueLiftY = this.getQueueVisualLiftY();
     const maxW = card.w * 0.9;
     const maxH = card.h * 0.78;
     const fitSize = Math.min(maxW, maxH) * Math.max(0.1, queueScale);
-    return this.drawChickenSprite(ctx, center.x, center.y, card.color, card.ammo, {
+    return this.drawChickenSprite(ctx, center.x, center.y - queueLiftY, card.color, card.ammo, {
       size: fitSize,
       scaleMul: CHICKEN_SIZE_SCALE,
       anchorY: 0.53,
@@ -4868,7 +4936,7 @@ class Game {
 
   drawFrontQueueCard(ctx, card, queueScale = 1) {
     const centerX = card.x + card.w * 0.5;
-    const centerY = card.y + card.h * 0.5;
+    const centerY = card.y + card.h * 0.5 - this.getQueueVisualLiftY();
     const scale = Math.max(0.1, queueScale);
     const bodyW = card.w * 0.72 * scale;
     const bodyH = card.h * 0.52 * scale;
@@ -4917,6 +4985,7 @@ class Game {
   }
 
   drawCardState(ctx) {
+    const queueLiftY = this.getQueueVisualLiftY();
     const cardsToDraw = [...this.cards].sort((a, b) => a.row - b.row);
     for (const card of cardsToDraw) {
       if (card.used) {
@@ -4925,8 +4994,8 @@ class Game {
       const queueScale = clamp(card.queueScale || 1, 0.88, 1.12);
       if (!this.drawQueueChicken(ctx, card, queueScale)) {
         const center = this.getCardPigCenter(card);
-        this.drawUnitBlock(ctx, center.x, center.y, UNIT_BLOCK_SIZE * queueScale, card.color, 1);
-        this.drawAmmoOnBlock(ctx, center.x, center.y, card.ammo, 30 * queueScale);
+        this.drawUnitBlock(ctx, center.x, center.y - queueLiftY, UNIT_BLOCK_SIZE * queueScale, card.color, 1);
+        this.drawAmmoOnBlock(ctx, center.x, center.y - queueLiftY, card.ammo, 30 * queueScale);
       }
     }
   }
@@ -4947,9 +5016,10 @@ class Game {
       }
 
       const center = this.getCardPigCenter(card);
+      const visualLiftY = this.getQueueVisualLiftY();
       ctx.strokeStyle = "rgba(255, 80, 80, 0.95)";
       ctx.beginPath();
-      ctx.arc(center.x, center.y, SHOOTER_HIT_RADIUS, 0, Math.PI * 2);
+      ctx.arc(center.x, center.y - visualLiftY, SHOOTER_HIT_RADIUS, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -5805,7 +5875,9 @@ class Game {
     if (this.tryRelaunchParkedUnitAt(x, y)) {
       return;
     }
-    const tapCard = this.cardManager.findTapTarget(x, y);
+    const tapCard = this.cardManager.findTapTarget(x, y, {
+      visualLiftY: this.getQueueVisualLiftY(),
+    });
     if (tapCard) {
       this.spawnUnit(tapCard.index);
     }
@@ -6103,6 +6175,56 @@ class Game {
     return nextScale;
   }
 
+  getDebugImageSettingsLevelId(levelId = this.currentLevelId) {
+    const rawId = String(levelId || DEFAULT_LEVEL_ID);
+    if (rawId === DEBUG_IMAGE_LEVEL_ID) {
+      const baseId = String(this.debugGeneratedBaseLevelId || DEFAULT_LEVEL_ID);
+      return baseId === DEBUG_IMAGE_LEVEL_ID ? DEFAULT_LEVEL_ID : baseId;
+    }
+    return rawId;
+  }
+
+  getDebugImageSettingsForLevel(levelId = this.currentLevelId) {
+    const key = this.getDebugImageSettingsLevelId(levelId);
+    const raw = this.debugImageSettingsByLevel?.[key];
+    return {
+      imageScale: clampDebugImageScale(raw?.imageScale ?? 1),
+      offsetY: clampDebugImageOffsetY(raw?.offsetY ?? DEBUG_IMAGE_OFFSET_Y_DEFAULT),
+    };
+  }
+
+  setDebugImageSettingsForLevel(levelId = this.currentLevelId, patch = {}) {
+    const key = this.getDebugImageSettingsLevelId(levelId);
+    const prev = this.getDebugImageSettingsForLevel(key);
+    this.debugImageSettingsByLevel[key] = {
+      imageScale: clampDebugImageScale(
+        Object.prototype.hasOwnProperty.call(patch, "imageScale") ? patch.imageScale : prev.imageScale
+      ),
+      offsetY: clampDebugImageOffsetY(
+        Object.prototype.hasOwnProperty.call(patch, "offsetY") ? patch.offsetY : prev.offsetY
+      ),
+    };
+    return this.debugImageSettingsByLevel[key];
+  }
+
+  syncDebugImageInputsForLevel(levelId = this.currentLevelId) {
+    const settings = this.getDebugImageSettingsForLevel(levelId);
+    this.syncDebugImageScaleInput(settings.imageScale);
+    this.syncDebugImageOffsetYInput(settings.offsetY);
+    return settings;
+  }
+
+  applyDebugImageScale(nextScale) {
+    const clamped = clampDebugImageScale(nextScale);
+    this.setDebugImageSettingsForLevel(this.currentLevelId, { imageScale: clamped });
+    if (CURRENT_LEVEL.pixelArt && typeof CURRENT_LEVEL.pixelArt === "object") {
+      CURRENT_LEVEL.pixelArt.artScale = clamped;
+    }
+    this.applyDebugLayout();
+    this.invalidate(false);
+    return clamped;
+  }
+
   getDebugImageScale() {
     return this.syncDebugImageScaleInput(this.debugImageScaleInput?.value);
   }
@@ -6118,6 +6240,17 @@ class Game {
       this.debugImageOffsetYValue.textContent = text;
     }
     return nextOffsetY;
+  }
+
+  applyDebugImageOffsetY(nextOffsetY) {
+    const clamped = clampDebugImageOffsetY(nextOffsetY);
+    this.setDebugImageSettingsForLevel(this.currentLevelId, { offsetY: clamped });
+    if (CURRENT_LEVEL.pixelArt && typeof CURRENT_LEVEL.pixelArt === "object") {
+      CURRENT_LEVEL.pixelArt.offsetY = clamped;
+    }
+    this.applyDebugLayout();
+    this.invalidate(false);
+    return clamped;
   }
 
   getDebugImageOffsetY() {
@@ -6308,8 +6441,7 @@ class Game {
     this.initDebugContentSelectors();
     this.syncDebugContentSelectors();
     this.syncDebugImageGridInputs(CURRENT_LEVEL.layout?.fieldCols || 18, CURRENT_LEVEL.layout?.fieldRows || 18);
-    this.syncDebugImageScaleInput(1);
-    this.syncDebugImageOffsetYInput(0);
+    this.syncDebugImageInputsForLevel(this.currentLevelId);
     this.syncDebugPaintColorOptions();
     this.syncDebugImageFileName();
     this.setDebugImageStatus("Выбери изображение, затем укажи сетку и нажми создать.");
@@ -6711,13 +6843,15 @@ class Game {
     }
     if (this.debugImageScaleInput) {
       this.debugImageScaleInput.addEventListener("input", () => {
-        this.syncDebugImageScaleInput(this.debugImageScaleInput.value);
+        const nextScale = this.syncDebugImageScaleInput(this.debugImageScaleInput.value);
+        this.applyDebugImageScale(nextScale);
       });
       this.debugImageScaleInput.dispatchEvent(new Event("input"));
     }
     if (this.debugImageOffsetYInput) {
       this.debugImageOffsetYInput.addEventListener("input", () => {
-        this.syncDebugImageOffsetYInput(this.debugImageOffsetYInput.value);
+        const nextOffsetY = this.syncDebugImageOffsetYInput(this.debugImageOffsetYInput.value);
+        this.applyDebugImageOffsetY(nextOffsetY);
       });
       this.debugImageOffsetYInput.dispatchEvent(new Event("input"));
     }
