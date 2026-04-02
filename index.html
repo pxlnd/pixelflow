@@ -130,7 +130,7 @@
         <details class="debug-subsection" open>
           <summary class="debug-subsection-title">Контент</summary>
           <label class="debug-check" for="debugLevelTopNavToggle">
-            <input id="debugLevelTopNavToggle" type="checkbox" checked>
+            <input id="debugLevelTopNavToggle" type="checkbox">
             <span>показывать верхнюю плашку уровней</span>
           </label>
           <label class="debug-select" for="debugLevelSelect">
@@ -292,7 +292,7 @@
       </div>
 
     </aside>
-    <div class="debug-level-nav" aria-label="Быстрое переключение уровня">
+    <div class="debug-level-nav" aria-label="Быстрое переключение уровня" hidden>
       <button id="debugLevelPrevTop" type="button" aria-label="Предыдущий уровень">←</button>
       <div id="debugLevelTopLabel" class="debug-level-nav-label">Level 1</div>
       <button id="debugLevelNextTop" type="button" aria-label="Следующий уровень">→</button>

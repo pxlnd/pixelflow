@@ -409,6 +409,7 @@ const DEBUG_STORAGE_KEYS_FALLBACK = [
   "pixelflow.debug.settings.v2",
   "pixelflow.debug.settings.v1",
 ];
+const DEBUG_TOP_NAV_VISIBLE_STORAGE_KEY = "pixelflow.debug.topLevelNavVisible.v1";
 const DEBUG_DEFAULTS = {
   shotBounceAmount: 0.2,
   shotBounceSpeed: 1,
@@ -440,7 +441,7 @@ const DEBUG_DEFAULTS = {
   cardYOffset2: 7,
   cardYOffset3: 0,
   cardYOffset4: 0,
-  topLevelNavVisible: true,
+  topLevelNavVisible: false,
   levelId: DEFAULT_LEVEL_ID,
   themeId: DEFAULT_THEME_ID,
 };
@@ -3420,6 +3421,7 @@ class Game {
   }
 
   loadDebugSettings() {
+    let topLevelNavVisible = DEBUG_DEFAULTS.topLevelNavVisible !== false;
     try {
       if (window.location.hash.startsWith("#dbg=")) {
         history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
@@ -3428,22 +3430,41 @@ class Game {
       for (const key of DEBUG_STORAGE_KEYS_FALLBACK) {
         window.localStorage.removeItem(key);
       }
+      const persistedTopNavVisible = window.localStorage.getItem(DEBUG_TOP_NAV_VISIBLE_STORAGE_KEY);
+      if (persistedTopNavVisible === "0") {
+        topLevelNavVisible = false;
+      } else if (persistedTopNavVisible === "1") {
+        topLevelNavVisible = true;
+      }
     } catch {
       // Ignore storage/history errors in restricted contexts.
     }
-    this.applyDebugSettings(DEBUG_DEFAULTS);
+    this.applyDebugSettings({
+      ...DEBUG_DEFAULTS,
+      topLevelNavVisible,
+    });
     // Keep startup deterministic even if external tooling restores form state.
     PLAYFIELD_SCALE = clamp(Number(DEBUG_DEFAULTS.playfieldScale), 0.7, 1.5);
     this.applyContentConfig(this.currentLevelId, this.currentThemeId, { restart: false });
   }
 
   saveDebugSettings() {
-    void this.suppressDebugSave;
-    // Debug persistence is intentionally disabled.
+    if (this.suppressDebugSave) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(DEBUG_TOP_NAV_VISIBLE_STORAGE_KEY, this.topLevelNavVisible ? "1" : "0");
+    } catch {
+      // Ignore storage failures.
+    }
   }
 
   clearDebugSettings() {
-    // Kept for compatibility with debug reset flow.
+    try {
+      window.localStorage.removeItem(DEBUG_TOP_NAV_VISIBLE_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures.
+    }
   }
 
   async exportDebugSettingsJSON() {

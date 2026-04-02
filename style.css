@@ -449,3 +449,13 @@ body {
     transform: none;
   }
 }
+
+@media (max-width: 920px) and (orientation: portrait) {
+  .debug-fab {
+    border-color: transparent;
+    background: transparent;
+    color: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}
