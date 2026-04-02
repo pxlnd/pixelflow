@@ -440,6 +440,7 @@ const DEBUG_DEFAULTS = {
   cardYOffset2: 7,
   cardYOffset3: 0,
   cardYOffset4: 0,
+  topLevelNavVisible: true,
   levelId: DEFAULT_LEVEL_ID,
   themeId: DEFAULT_THEME_ID,
 };
@@ -566,6 +567,34 @@ const CHICKEN_SPRITE_SOURCE_BY_COLOR = {
   white: "ui/white_chicken 1.png",
   yellow: "ui/chicken 2.png",
   red: "ui/red_chicken 1.png",
+};
+
+const BLOCK_TILE_SOURCE_BY_COLOR = {
+  green: "ui/green.png",
+  black: "ui/black.png",
+  blue: "ui/blue.png",
+  white: "ui/white.png",
+  yellow: "ui/yellow.png",
+  red: "ui/red.png",
+  red_alt: "ui/red-1.png",
+  orange: "ui/orange.png",
+  brown: "ui/brown.png",
+  light_purple: "ui/light_purple.png",
+  dark_pink: "ui/dark_pink.png",
+  dark_blue: "ui/dark_blue.png",
+  dark_purple: "ui/dark_purple.png",
+  light_green: "ui/light_green.png",
+};
+
+const BLOCK_TILE_COLOR_ALIASES = {
+  pink: "dark_pink",
+  magenta: "dark_pink",
+  violet: "dark_purple",
+  purple: "dark_purple",
+  cyan: "blue",
+  sky: "blue",
+  lime: "light_green",
+  crimson: "red_alt",
 };
 
 const DEBUG_IMAGE_LEVEL_ID = "debug-image-level";
@@ -902,6 +931,91 @@ function getCardYOffsetByIndex(index) {
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
+}
+
+function hexToRgb(hex, fallback = { r: 127, g: 127, b: 127 }) {
+  if (typeof hex !== "string") {
+    return { ...fallback };
+  }
+  const normalized = hex.trim().replace(/^#/, "");
+  if (normalized.length === 3) {
+    const r = parseInt(normalized[0] + normalized[0], 16);
+    const g = parseInt(normalized[1] + normalized[1], 16);
+    const b = parseInt(normalized[2] + normalized[2], 16);
+    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+      return { r, g, b };
+    }
+    return { ...fallback };
+  }
+  if (normalized.length === 6) {
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+      return { r, g, b };
+    }
+  }
+  return { ...fallback };
+}
+
+function rgbToHsl(r, g, b) {
+  const nr = clamp(r, 0, 255) / 255;
+  const ng = clamp(g, 0, 255) / 255;
+  const nb = clamp(b, 0, 255) / 255;
+  const max = Math.max(nr, ng, nb);
+  const min = Math.min(nr, ng, nb);
+  const lightness = (max + min) / 2;
+
+  if (max === min) {
+    return { h: 0, s: 0, l: lightness };
+  }
+
+  const delta = max - min;
+  const saturation =
+    lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+
+  if (max === nr) {
+    hue = (ng - nb) / delta + (ng < nb ? 6 : 0);
+  } else if (max === ng) {
+    hue = (nb - nr) / delta + 2;
+  } else {
+    hue = (nr - ng) / delta + 4;
+  }
+
+  return { h: hue / 6, s: saturation, l: lightness };
+}
+
+function hslToRgb(h, s, l) {
+  const hue = ((h % 1) + 1) % 1;
+  const saturation = clamp(s, 0, 1);
+  const lightness = clamp(l, 0, 1);
+
+  if (saturation === 0) {
+    const value = Math.round(lightness * 255);
+    return { r: value, g: value, b: value };
+  }
+
+  const q =
+    lightness < 0.5
+      ? lightness * (1 + saturation)
+      : lightness + saturation - lightness * saturation;
+  const p = 2 * lightness - q;
+  const toChannel = (t) => {
+    let channelT = t;
+    if (channelT < 0) channelT += 1;
+    if (channelT > 1) channelT -= 1;
+    if (channelT < 1 / 6) return p + (q - p) * 6 * channelT;
+    if (channelT < 1 / 2) return q;
+    if (channelT < 2 / 3) return p + (q - p) * (2 / 3 - channelT) * 6;
+    return p;
+  };
+
+  return {
+    r: Math.round(toChannel(hue + 1 / 3) * 255),
+    g: Math.round(toChannel(hue) * 255),
+    b: Math.round(toChannel(hue - 1 / 3) * 255),
+  };
 }
 
 function easeOutCubic(t) {
@@ -1760,6 +1874,11 @@ class Game {
     this.backdropImage = new Image();
     this.backdropImage.src = "ui/bg.jpg";
     this.backdropImage.decoding = "sync";
+    this.blockTemplateImage = new Image();
+    this.blockTemplateImage.src = "ui/block.png";
+    this.blockTemplateImage.decoding = "sync";
+    this.blockTileImageByColor = {};
+    this.blockTileUsesSourceImage = {};
     this.generatedBackdropCache = null;
 
     this.sprites = {
@@ -1778,6 +1897,7 @@ class Game {
     };
     this.chickenSpriteImageByColor = {};
     this.initChickenSpriteImages();
+    this.initBlockTileImages();
 
     const staticSceneLayer = createBufferCanvas(this.width, this.height, false);
     this.staticSceneLayer = staticSceneLayer.canvas;
@@ -1843,6 +1963,8 @@ class Game {
     this.debugImageLevelSection = document.getElementById("debugImageLevelSection");
     this.debugLevelSelect = document.getElementById("debugLevelSelect");
     this.debugThemeSelect = document.getElementById("debugThemeSelect");
+    this.debugLevelTopNav = document.querySelector(".debug-level-nav");
+    this.debugLevelTopNavToggle = document.getElementById("debugLevelTopNavToggle");
     this.debugLevelPrevTopButton = document.getElementById("debugLevelPrevTop");
     this.debugLevelNextTopButton = document.getElementById("debugLevelNextTop");
     this.debugLevelTopLabel = document.getElementById("debugLevelTopLabel");
@@ -1938,6 +2060,7 @@ class Game {
     this.debugPaintTool = "paint";
     this.debugPaintColor = "blue";
     this.debugPaintHoverCell = null;
+    this.topLevelNavVisible = true;
 
     this.loadDebugSettings();
     this.initDebugControls();
@@ -1975,6 +2098,10 @@ class Game {
       this.rebuildStaticSceneLayer();
       this.invalidate(false);
     };
+    this.blockTemplateImage.onload = () => {
+      this.buildReferenceAssets();
+      this.invalidate(false);
+    };
 
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => this.invalidate(false));
@@ -1985,12 +2112,21 @@ class Game {
   }
 
   buildReferenceAssets() {
-    this.sprites.greenTile = this.createBlockSprite("green");
-    this.sprites.blackTile = this.createBlockSprite("black");
-    this.sprites.blueTile = this.createBlockSprite("blue");
-    this.sprites.whiteTile = this.createBlockSprite("white");
-    this.sprites.yellowTile = this.createBlockSprite("yellow");
-    this.sprites.redTile = this.createBlockSprite("red");
+    const blockColors = new Set([
+      ...Object.keys(BLOCK_COLOR_CONFIG),
+      ...Object.keys(BLOCK_TILE_SOURCE_BY_COLOR),
+    ]);
+    this.blockTileUsesSourceImage = {};
+    for (const color of blockColors) {
+      this.sprites[`${color}Tile`] = this.createBlockSprite(color);
+      this.blockTileUsesSourceImage[color] = !!this.getLoadedBlockTileImage(color);
+    }
+    this.sprites.greenTile = this.sprites.greenTile || this.createBlockSprite("green");
+    this.sprites.blackTile = this.sprites.blackTile || this.sprites.greenTile;
+    this.sprites.blueTile = this.sprites.blueTile || this.sprites.greenTile;
+    this.sprites.whiteTile = this.sprites.whiteTile || this.sprites.greenTile;
+    this.sprites.yellowTile = this.sprites.yellowTile || this.sprites.greenTile;
+    this.sprites.redTile = this.sprites.redTile || this.sprites.greenTile;
     this.sprites.chickenByColor = {};
     for (const color of Object.keys(BLOCK_COLOR_CONFIG)) {
       const imageSprite = this.chickenSpriteImageByColor[color];
@@ -2017,6 +2153,7 @@ class Game {
     );
     this.sprites.woodPattern = this.createWoodPatternTile();
     this.rebuildStaticSceneLayer();
+    this.rebuildBlockFieldLayer();
   }
 
   initChickenSpriteImages() {
@@ -2032,6 +2169,46 @@ class Game {
     }
   }
 
+  initBlockTileImages() {
+    for (const [color, src] of Object.entries(BLOCK_TILE_SOURCE_BY_COLOR)) {
+      const image = new Image();
+      image.decoding = "sync";
+      image.src = src;
+      image.onload = () => {
+        this.buildReferenceAssets();
+        this.invalidate(false);
+      };
+      this.blockTileImageByColor[color] = image;
+    }
+  }
+
+  resolveBlockTileColorKey(color) {
+    const normalized = String(color || "").trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, normalized)) {
+      return normalized;
+    }
+    const alias = BLOCK_TILE_COLOR_ALIASES[normalized];
+    if (alias && Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, alias)) {
+      return alias;
+    }
+    return null;
+  }
+
+  getLoadedBlockTileImage(color) {
+    const key = this.resolveBlockTileColorKey(color);
+    if (!key) {
+      return null;
+    }
+    const image = this.blockTileImageByColor[key];
+    if (!image || !image.complete || image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      return null;
+    }
+    return image;
+  }
+
   createBlockSprite(color) {
     const size = Math.max(8, Math.round(LAYOUT.cellSize || 30));
     const tile = document.createElement("canvas");
@@ -2041,15 +2218,61 @@ class Game {
     if (!tileCtx) {
       return null;
     }
+    const sourceImage = this.getLoadedBlockTileImage(color);
+    if (sourceImage) {
+      tileCtx.clearRect(0, 0, size, size);
+      tileCtx.imageSmoothingEnabled = true;
+      tileCtx.imageSmoothingQuality = "high";
+      tileCtx.drawImage(sourceImage, 0, 0, size, size);
+      return tile;
+    }
     const palette = getBlockColorConfig(color).sprite;
-    const base = palette.base;
-    const mid = palette.mid;
-    const dark = palette.dark;
-    const grad = tileCtx.createLinearGradient(0, 0, size, size);
-    grad.addColorStop(0, base);
-    grad.addColorStop(0.56, mid);
-    grad.addColorStop(1, dark);
-    tileCtx.fillStyle = grad;
+    const template = this.blockTemplateImage;
+    if (template && template.complete && template.naturalWidth > 0 && template.naturalHeight > 0) {
+      const baseRgb = hexToRgb(palette.base);
+      const baseHsl = rgbToHsl(baseRgb.r, baseRgb.g, baseRgb.b);
+      tileCtx.clearRect(0, 0, size, size);
+      tileCtx.drawImage(template, 0, 0, size, size);
+      const imageData = tileCtx.getImageData(0, 0, size, size);
+      const data = imageData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        const alpha = data[i + 3];
+        if (alpha === 0) {
+          continue;
+        }
+        const sourceR = data[i];
+        const sourceG = data[i + 1];
+        const sourceB = data[i + 2];
+        const sourceHsl = rgbToHsl(sourceR, sourceG, sourceB);
+        const sourceLuma = (sourceR * 0.2126 + sourceG * 0.7152 + sourceB * 0.0722) / 255;
+        const satMix = clamp(baseHsl.s * 1.25, 0, 1);
+        const mappedSaturation = clamp(
+          lerp(sourceHsl.s * 0.14, sourceHsl.s * 1.04, satMix),
+          0,
+          1
+        );
+        const mappedLightness = clamp(
+          sourceHsl.l + (baseHsl.l - 0.5) * 0.2,
+          0.04,
+          0.96
+        );
+        const recolored = hslToRgb(baseHsl.h, mappedSaturation, mappedLightness);
+        const gloss = clamp((sourceLuma - 0.76) / 0.24, 0, 1);
+        const shadow = clamp((0.28 - sourceLuma) / 0.28, 0, 1);
+
+        data[i] = Math.round(clamp(lerp(recolored.r, 255, gloss * 0.28) * (1 - shadow * 0.08), 0, 255));
+        data[i + 1] = Math.round(clamp(lerp(recolored.g, 255, gloss * 0.28) * (1 - shadow * 0.08), 0, 255));
+        data[i + 2] = Math.round(clamp(lerp(recolored.b, 255, gloss * 0.28) * (1 - shadow * 0.08), 0, 255));
+      }
+      tileCtx.putImageData(imageData, 0, 0);
+      return tile;
+    }
+
+    const fallbackGrad = tileCtx.createLinearGradient(0, 0, size, size);
+    fallbackGrad.addColorStop(0, palette.base);
+    fallbackGrad.addColorStop(0.56, palette.mid);
+    fallbackGrad.addColorStop(1, palette.dark);
+    tileCtx.fillStyle = fallbackGrad;
     roundedRect(tileCtx, 0, 0, size, size, Math.max(4, Math.round(size * 0.18)));
     tileCtx.fill();
 
@@ -3102,6 +3325,7 @@ class Game {
       cardYOffset2: CARD_Y_OFFSET_2,
       cardYOffset3: CARD_Y_OFFSET_3,
       cardYOffset4: CARD_Y_OFFSET_4,
+      topLevelNavVisible: this.topLevelNavVisible,
       debugImageSettingsByLevel: cloneData(this.debugImageSettingsByLevel || {}),
       levelId: this.getValidLevelId(this.currentLevelId),
       themeId: this.getValidThemeId(this.currentThemeId),
@@ -3151,6 +3375,8 @@ class Game {
     CARD_Y_OFFSET_2 = clamp(Number(settings.cardYOffset2 ?? DEBUG_DEFAULTS.cardYOffset2), -260, 260);
     CARD_Y_OFFSET_3 = clamp(Number(settings.cardYOffset3 ?? DEBUG_DEFAULTS.cardYOffset3), -260, 260);
     CARD_Y_OFFSET_4 = clamp(Number(settings.cardYOffset4 ?? DEBUG_DEFAULTS.cardYOffset4), -260, 260);
+    this.topLevelNavVisible = settings.topLevelNavVisible !== false;
+    this.setTopLevelDebugNavVisible(this.topLevelNavVisible);
     this.debugImageSettingsByLevel = {};
     if (settings.debugImageSettingsByLevel && typeof settings.debugImageSettingsByLevel === "object") {
       for (const [levelId, value] of Object.entries(settings.debugImageSettingsByLevel)) {
@@ -3891,6 +4117,28 @@ class Game {
       return { x: -1, y: 0, side: "right" };
     }
 
+    // Large boards can overlap rail lanes: in that case units are not strictly "outside"
+    // the field bounds, so we still choose the nearest inward side to keep shooting active.
+    const distTop = Math.abs(sourcePoint.y - top);
+    const distBottom = Math.abs(sourcePoint.y - bottom);
+    const distLeft = Math.abs(sourcePoint.x - left);
+    const distRight = Math.abs(sourcePoint.x - right);
+    const nearestVertical = distTop <= distBottom ? "top" : "bottom";
+    const nearestHorizontal = distLeft <= distRight ? "left" : "right";
+    const nearestVerticalDist = Math.min(distTop, distBottom);
+    const nearestHorizontalDist = Math.min(distLeft, distRight);
+
+    if (alignedX && (!alignedY || nearestVerticalDist <= nearestHorizontalDist)) {
+      return nearestVertical === "top"
+        ? { x: 0, y: 1, side: "top" }
+        : { x: 0, y: -1, side: "bottom" };
+    }
+    if (alignedY) {
+      return nearestHorizontal === "left"
+        ? { x: 1, y: 0, side: "left" }
+        : { x: -1, y: 0, side: "right" };
+    }
+
     return null;
   }
 
@@ -4538,6 +4786,8 @@ class Game {
     const size = block.size;
     const spriteKey = `${block.color}Tile`;
     const sprite = this.sprites[spriteKey] || this.sprites.greenTile;
+    const resolvedTileColor = this.resolveBlockTileColorKey(block.color);
+    const usesSourceSprite = !!(resolvedTileColor && this.blockTileUsesSourceImage[resolvedTileColor]);
     const baseColor = getBlockColorConfig(block.color).face;
     const alpha = options.alpha ?? 1;
     const shadowOpacity = options.shadowOpacity ?? 0.24;
@@ -4547,13 +4797,35 @@ class Game {
     const depth = Math.max(3, Math.round(size * 0.14));
     const innerInset = Math.max(2, Math.round(size * 0.1));
     const corner = Math.max(6, Math.round(size * 0.24));
+    const usesTemplateSprite =
+      !!sprite && (
+        usesSourceSprite || (
+          !!this.blockTemplateImage &&
+          this.blockTemplateImage.complete &&
+          this.blockTemplateImage.naturalWidth > 0 &&
+          this.blockTemplateImage.naturalHeight > 0
+        )
+      );
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    ctx.fillStyle = `rgba(10, 14, 10, ${shadowOpacity + 0.04})`;
-    roundedRect(ctx, x + 1, drawY + depth + 3, size - 2, size - 1, corner);
+    ctx.fillStyle = `rgba(10, 14, 10, ${shadowOpacity + (usesTemplateSprite ? 0.02 : 0.04)})`;
+    roundedRect(ctx, x + 1, drawY + depth + (usesTemplateSprite ? 1 : 3), size - 2, size - 1, corner);
     ctx.fill();
+
+    if (sprite) {
+      ctx.drawImage(sprite, x, drawY, size, size);
+    } else {
+      roundedRect(ctx, x, drawY, size, size, corner);
+      ctx.fillStyle = baseColor;
+      ctx.fill();
+    }
+
+    if (usesTemplateSprite) {
+      ctx.restore();
+      return;
+    }
 
     // Bottom face only (no right shift), to keep the block aligned.
     roundedRect(ctx, x, drawY + depth, size, size - depth, corner);
@@ -4562,15 +4834,6 @@ class Game {
     sideGrad.addColorStop(1, "rgba(0, 0, 0, 0.32)");
     ctx.fillStyle = sideGrad;
     ctx.fill();
-
-    // Main top face.
-    if (sprite) {
-      ctx.drawImage(sprite, x, drawY, size, size);
-    } else {
-      roundedRect(ctx, x, drawY, size, size, corner);
-      ctx.fillStyle = baseColor;
-      ctx.fill();
-    }
 
     roundedRect(ctx, x, drawY, size, size, corner);
     const faceGrad = ctx.createLinearGradient(x, drawY, x + size, drawY + size);
@@ -5990,6 +6253,7 @@ class Game {
 
   initDebugContentSelectors() {
     this.fillDebugContentSelectors();
+    this.setTopLevelDebugNavVisible(this.topLevelNavVisible);
 
     if (this.debugContentSelectorsBound) {
       return;
@@ -6011,6 +6275,24 @@ class Game {
         this.syncDebugContentSelectors();
         this.saveDebugSettings();
       });
+    }
+
+    if (this.debugLevelTopNavToggle) {
+      this.debugLevelTopNavToggle.checked = this.topLevelNavVisible;
+      this.debugLevelTopNavToggle.addEventListener("change", () => {
+        this.setTopLevelDebugNavVisible(!!this.debugLevelTopNavToggle?.checked);
+        this.saveDebugSettings();
+      });
+    }
+  }
+
+  setTopLevelDebugNavVisible(visible) {
+    this.topLevelNavVisible = !!visible;
+    if (this.debugLevelTopNavToggle) {
+      this.debugLevelTopNavToggle.checked = this.topLevelNavVisible;
+    }
+    if (this.debugLevelTopNav) {
+      this.debugLevelTopNav.hidden = !this.topLevelNavVisible;
     }
   }
 

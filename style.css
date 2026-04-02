@@ -71,6 +71,10 @@ body {
   backdrop-filter: blur(4px);
 }
 
+.debug-level-nav[hidden] {
+  display: none !important;
+}
+
 .debug-level-nav button {
   width: 34px;
   height: 28px;

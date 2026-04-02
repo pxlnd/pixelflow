@@ -209,3 +209,11 @@ TODO next:
 - Verification:
   - `node --check main.js` passed.
   - Visual sanity artifact after change: `output/web-game/track-width-adaptive/shot-0.png`.
+- 2026-04-02: central collectible blocks switched from procedural template recolor to user-provided juicy PNG tiles in `ui/`.
+  - `main.js`: added `BLOCK_TILE_SOURCE_BY_COLOR` with explicit mappings for all provided block assets (`green/black/blue/white/yellow/red/red_alt/orange/brown/light_purple/dark_pink/dark_blue/dark_purple/light_green`) and alias normalization via `BLOCK_TILE_COLOR_ALIASES`.
+  - `main.js`: `Game` now preloads block tile images (`initBlockTileImages`), resolves color aliases (`resolveBlockTileColorKey`), and uses loaded PNG tile images first in `createBlockSprite`; old `ui/block.png` recolor remains as fallback.
+  - `main.js`: `buildReferenceAssets` now builds tile sprites from the union of gameplay colors and provided tile colors, and tracks `blockTileUsesSourceImage` so `drawVolumetricBlock` keeps the source PNG look (without extra bevel overlays) when image tiles are available.
+- Verification:
+  - `node --check main.js` passed.
+  - Required skill client run (`develop-web-game`): `output/web-game/verify-block-reskin/shot-0.png`, `state-0.json`, `errors-0.json`.
+  - Additional direct Playwright visual proof (portrait, Level 2 with pre-filled cells): `output/web-game/verify-block-reskin/shot-level2-filled.png`, `state-level2-filled.json`.
