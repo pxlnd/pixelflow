@@ -1147,6 +1147,7 @@ class Block {
     );
     this.alive = false;
     this.spiralIndex = Number.MAX_SAFE_INTEGER;
+    this.spiralOrder = Number.MAX_SAFE_INTEGER;
     this.hitFlash = 0;
     this.x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
     this.y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
@@ -1862,6 +1863,9 @@ class Game {
     this.losePopupImage = new Image();
     this.losePopupImage.src = "ui/lose_popup_space_ref.png";
     this.losePopupImage.decoding = "sync";
+    this.losePopupBirdsImage = new Image();
+    this.losePopupBirdsImage.src = "ui/loose.png";
+    this.losePopupBirdsImage.decoding = "sync";
     this.woodImage = new Image();
     this.woodImage.src = "ui/wood.png";
     this.woodImage.decoding = "sync";
@@ -1908,6 +1912,7 @@ class Game {
 
     this.conveyor = new Conveyor();
     this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
+    this.spiralTraversalOrderByCell = this.buildSpiralTraversalOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
     this.blocks = [];
     this.blocksBySpiral = [];
     this.units = [];
@@ -1923,6 +1928,8 @@ class Game {
     this.backButtonRect = { ...BACK_BUTTON_UI };
     this.restartButtonRect = { x: 0, y: 0, w: COINS_UI.panelW, h: COINS_UI.panelH };
     this.loseCloseRect = { x: 0, y: 0, w: 0, h: 0 };
+    this.loseContinueRect = { x: 0, y: 0, w: 0, h: 0 };
+    this.loseFreeRect = { x: 0, y: 0, w: 0, h: 0 };
     this.cards = [];
     this.wagon = {
       x: LAYOUT.spawnPoint.x,
@@ -2078,6 +2085,9 @@ class Game {
       this.invalidate(false);
     };
     this.losePopupImage.onload = () => {
+      this.invalidate(false);
+    };
+    this.losePopupBirdsImage.onload = () => {
       this.invalidate(false);
     };
     this.woodImage.onload = () => {
@@ -2837,7 +2847,9 @@ class Game {
 
   restart() {
     this.blocks = this.createBlocksFromReference();
-    this.blocksBySpiral = this.blocks.slice().sort((a, b) => a.spiralIndex - b.spiralIndex);
+    this.blocksBySpiral = this.blocks
+      .slice()
+      .sort((a, b) => (a.spiralIndex - b.spiralIndex) || (a.spiralOrder - b.spiralOrder));
     this.units = [];
     this.projectiles = [];
     this.particles = [];
@@ -2888,6 +2900,9 @@ class Game {
         if (this.spiralOrderByCell.has(key)) {
           block.spiralIndex = this.spiralOrderByCell.get(key);
         }
+        if (this.spiralTraversalOrderByCell.has(key)) {
+          block.spiralOrder = this.spiralTraversalOrderByCell.get(key);
+        }
         blocks.push(block);
       }
     }
@@ -2896,6 +2911,19 @@ class Game {
   }
 
   buildSpiralOrderMap(cols, rows) {
+    const orderByCell = new Map();
+    const centerCol = Math.floor((cols - 1) / 2);
+    const centerRow = Math.floor((rows - 1) / 2);
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const ringIndex = Math.max(Math.abs(col - centerCol), Math.abs(row - centerRow));
+        orderByCell.set(`${col},${row}`, ringIndex);
+      }
+    }
+    return orderByCell;
+  }
+
+  buildSpiralTraversalOrderMap(cols, rows) {
     const orderByCell = new Map();
     const total = cols * rows;
     let visited = 0;
@@ -2908,7 +2936,7 @@ class Game {
       [0, 1],
     ];
 
-    const pushCell = (col, row, spiralIndex) => {
+    const pushCell = (col, row) => {
       if (col < 0 || row < 0 || col >= cols || row >= rows) {
         return;
       }
@@ -2916,31 +2944,24 @@ class Game {
       if (orderByCell.has(key)) {
         return;
       }
-      orderByCell.set(key, spiralIndex);
+      orderByCell.set(key, visited);
       visited += 1;
     };
 
-    pushCell(x, y, 0);
+    pushCell(x, y);
     let stepLength = 1;
     let dirIndex = 0;
-    let legIndex = 0;
-    let segmentIndex = 2;
     while (visited < total) {
       for (let turn = 0; turn < 2; turn++) {
         const [dx, dy] = dirs[dirIndex % dirs.length];
-        const currentSegment = legIndex < 2 ? 1 : segmentIndex;
         for (let step = 0; step < stepLength; step++) {
           x += dx;
           y += dy;
-          pushCell(x, y, currentSegment);
+          pushCell(x, y);
           if (visited >= total) {
             break;
           }
         }
-        if (legIndex >= 2) {
-          segmentIndex += 1;
-        }
-        legIndex += 1;
         dirIndex += 1;
         if (visited >= total) {
           break;
@@ -3247,6 +3268,7 @@ class Game {
     this.currentLevelId = nextLevelId;
     this.syncDebugImageInputsForLevel(this.currentLevelId);
     this.spiralOrderByCell = this.buildSpiralOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
+    this.spiralTraversalOrderByCell = this.buildSpiralTraversalOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
     this.cardManager = new CardManager(LAYOUT.cards, BOTTOM_QUEUE_CARD_COUNT);
     this.slotManager = new SlotManager(LAYOUT.slots, SLOT_CLAIM_ORDER);
@@ -4157,12 +4179,12 @@ class Game {
     return { forwardDistance, sideDistance };
   }
 
-  isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth, ignoreSpiralIndex = null) {
+  isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth, ignoreBlockId = null) {
     for (const block of this.blocks) {
       if (!block.alive) {
         continue;
       }
-      if (ignoreSpiralIndex !== null && block.spiralIndex === ignoreSpiralIndex) {
+      if (ignoreBlockId !== null && block.id === ignoreBlockId) {
         continue;
       }
       const hit = this.getLineHitForBlock(sourcePoint, direction, block, lineHalfWidth);
@@ -4185,77 +4207,111 @@ class Game {
   }
 
   getNextSpiralTargets() {
+    const firstPending = this.getFirstPendingSpiralBlock();
+    if (!firstPending) {
+      return [];
+    }
+    const currentRing = firstPending.spiralIndex;
+    const ringBlocks = this.blocksBySpiral
+      .filter((block) => block.spiralIndex === currentRing)
+      .sort((a, b) => a.spiralOrder - b.spiralOrder);
+    if (ringBlocks.length === 0) {
+      return [];
+    }
+
+    const firstPendingIndex = ringBlocks.findIndex((block) => !block.alive);
+    if (firstPendingIndex < 0) {
+      return [];
+    }
+
+    if (!ringBlocks.some((block) => block.alive)) {
+      return ringBlocks.filter((block) => !block.alive);
+    }
+
+    const total = ringBlocks.length;
+    let stopIndex = -1;
+    for (let back = 1; back <= total; back += 1) {
+      const idx = (firstPendingIndex - back + total) % total;
+      if (ringBlocks[idx].alive) {
+        stopIndex = idx;
+        break;
+      }
+    }
+    if (stopIndex < 0) {
+      return ringBlocks.filter((block) => !block.alive);
+    }
+
     const targets = [];
-    let currentSpiralIndex = null;
-    for (const block of this.blocksBySpiral) {
+    for (let offset = 1; offset <= total; offset += 1) {
+      const idx = (stopIndex + offset) % total;
+      const block = ringBlocks[idx];
       if (block.alive) {
-        continue;
-      }
-      if (currentSpiralIndex === null) {
-        currentSpiralIndex = block.spiralIndex;
-      }
-      if (block.spiralIndex !== currentSpiralIndex) {
         break;
       }
       targets.push(block);
     }
-    return targets;
+    return targets.length ? targets : ringBlocks.filter((block) => !block.alive);
   }
 
-  getNextSpiralTargetForColor(color) {
-    const targets = this.getNextSpiralTargets();
-    for (const target of targets) {
-      if (target.color === color) {
-        return target;
+  getFirstPendingSpiralBlock() {
+    for (const block of this.blocksBySpiral) {
+      if (!block.alive) {
+        return block;
       }
     }
     return null;
   }
 
+  getNextSpiralTargetForColor(color) {
+    const target = this.getNextSpiralTarget();
+    if (!target) {
+      return null;
+    }
+    return target.color === color ? target : null;
+  }
+
   canColorShootNextSpiralTarget(color) {
-    const targets = this.getNextSpiralTargets().filter((target) => target.color === color);
-    if (targets.length === 0) {
+    const target = this.getNextSpiralTarget();
+    if (!target || target.color !== color) {
       return false;
     }
 
     const lineHalfWidth = LAYOUT.cellSize * 0.65;
-    for (const target of targets) {
-      const targetCenter = this.blockCenter(target);
-      const probes = [
-        {
-          sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
-          direction: { x: 1, y: 0 },
-        },
-        {
-          sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
-          direction: { x: -1, y: 0 },
-        },
-        {
-          sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
-          direction: { x: 0, y: 1 },
-        },
-        {
-          sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
-          direction: { x: 0, y: -1 },
-        },
-      ];
+    const targetCenter = this.blockCenter(target);
+    const probes = [
+      {
+        sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: 1, y: 0 },
+      },
+      {
+        sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: -1, y: 0 },
+      },
+      {
+        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
+        direction: { x: 0, y: 1 },
+      },
+      {
+        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
+        direction: { x: 0, y: -1 },
+      },
+    ];
 
-      for (const probe of probes) {
-        const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
-        if (!hit) {
-          continue;
-        }
-        if (this.isPathBlockedByPlacedBlocks(
-          probe.sourcePoint,
-          probe.direction,
-          hit.forwardDistance,
-          lineHalfWidth * 0.9,
-          target.spiralIndex
-        )) {
-          continue;
-        }
-        return true;
+    for (const probe of probes) {
+      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
       }
+      if (this.isPathBlockedByPlacedBlocks(
+        probe.sourcePoint,
+        probe.direction,
+        hit.forwardDistance,
+        lineHalfWidth * 0.9,
+        target.id
+      )) {
+        continue;
+      }
+      return true;
     }
 
     return false;
@@ -4263,34 +4319,25 @@ class Game {
 
   findTargetOnLine(sourcePoint, color, direction) {
     const lineHalfWidth = LAYOUT.cellSize * 0.65;
-    const targets = this.getNextSpiralTargets().filter((target) => target.color === color);
-    if (targets.length === 0) {
+    const target = this.getNextSpiralTarget();
+    if (!target || target.color !== color) {
       return null;
     }
 
-    let bestTarget = null;
-    let bestDistance = Infinity;
-    for (const target of targets) {
-      const hit = this.getLineHitForBlock(sourcePoint, direction, target, lineHalfWidth);
-      if (!hit) {
-        continue;
-      }
-      if (this.isPathBlockedByPlacedBlocks(
-        sourcePoint,
-        direction,
-        hit.forwardDistance,
-        lineHalfWidth * 0.9,
-        target.spiralIndex
-      )) {
-        continue;
-      }
-      if (hit.forwardDistance < bestDistance) {
-        bestDistance = hit.forwardDistance;
-        bestTarget = target;
-      }
+    const hit = this.getLineHitForBlock(sourcePoint, direction, target, lineHalfWidth);
+    if (!hit) {
+      return null;
     }
-
-    return bestTarget;
+    if (this.isPathBlockedByPlacedBlocks(
+      sourcePoint,
+      direction,
+      hit.forwardDistance,
+      lineHalfWidth * 0.9,
+      target.id
+    )) {
+      return null;
+    }
+    return target;
   }
 
   hasTargetForColor(color) {
@@ -4440,7 +4487,10 @@ class Game {
       return;
     }
     this.gameState = "lose";
-    this.units = [];
+    const parkedUnits = this.units.filter(
+      (unit) => unit.alive && unit.state === "parked" && unit.slotIndex !== null && unit.ammo > 0
+    );
+    this.units = parkedUnits;
     this.projectiles = [];
     this.particles = [];
     this.impactRings = [];
@@ -4448,6 +4498,21 @@ class Game {
     this.slotBursts = [];
     this.floatTexts = [];
     this.slotManager.reset();
+    for (const unit of this.units) {
+      const slotIndex = unit.slotIndex;
+      if (slotIndex === null || slotIndex === undefined) {
+        continue;
+      }
+      if (slotIndex < 0 || slotIndex >= this.slotManager.occupants.length) {
+        continue;
+      }
+      this.slotManager.occupants[slotIndex] = unit.id;
+      const slotCenter = this.getSlotCenter(slotIndex);
+      if (slotCenter) {
+        unit.position = { ...slotCenter };
+        unit.prevPosition = { ...slotCenter };
+      }
+    }
     for (const block of this.blocks) {
       block.hitFlash = 0;
     }
@@ -4456,6 +4521,69 @@ class Game {
     this.losePopupAppear = 0;
     this.loseCloseRect = this.getLoseCloseRect();
     this.invalidate(true);
+  }
+
+  continueFromLoseWithOneSlot() {
+    if (this.gameState !== "lose") {
+      return false;
+    }
+
+    const parkedUnits = this.units
+      .filter((unit) => unit.alive && unit.state === "parked" && unit.slotIndex !== null && unit.ammo > 0)
+      .slice()
+      .sort((a, b) => (a.slotIndex - b.slotIndex) || (a.id - b.id));
+    const keeper = parkedUnits[0] || null;
+    const keeperId = keeper ? keeper.id : null;
+    const cardByLabel = new Map(this.cards.map((card) => [String(card.label), card]));
+
+    for (const unit of parkedUnits) {
+      if (keeperId !== null && unit.id === keeperId) {
+        continue;
+      }
+      const labelKey = String(unit.label);
+      const targetCard =
+        cardByLabel.get(labelKey) ||
+        this.cards.find((card) => card.used && card.color === unit.color) ||
+        this.cards.find((card) => card.used);
+      if (targetCard) {
+        targetCard.used = false;
+        targetCard.ammo = Math.max(1, Math.round(unit.ammo));
+        targetCard.color = unit.color;
+        if (unit.styleKey) {
+          targetCard.styleKey = unit.styleKey;
+        }
+      }
+      unit.alive = false;
+      unit.slotIndex = null;
+    }
+
+    this.units = keeper ? [keeper] : [];
+    this.slotManager.reset();
+    if (keeper && keeper.slotIndex !== null && keeper.slotIndex >= 0 && keeper.slotIndex < this.slotManager.occupants.length) {
+      this.slotManager.occupants[keeper.slotIndex] = keeper.id;
+      const slotCenter = this.getSlotCenter(keeper.slotIndex);
+      if (slotCenter) {
+        keeper.position = { ...slotCenter };
+        keeper.prevPosition = { ...slotCenter };
+      }
+      keeper.state = "parked";
+      keeper.cooldown = 0;
+      keeper.parkBounce = 0;
+      keeper.renderRotation = null;
+    }
+
+    for (const card of this.cards) {
+      if (card.ammo <= 0) {
+        card.used = true;
+      }
+    }
+    this.normalizeShooterQueues(this.cards);
+    this.gameState = "playing";
+    this.losePopupAppear = 1;
+    this.successStreak = 0;
+    this.streakTimer = 0;
+    this.invalidate(true);
+    return true;
   }
 
   triggerDebug6() {
@@ -5587,11 +5715,18 @@ class Game {
   }
 
   getLosePopupRect() {
-    const w = LOSE_POPUP_UI.w;
-    const h = LOSE_POPUP_UI.h;
+    const targetScale = 1.4;
+    let w = LOSE_POPUP_UI.w * targetScale;
+    let h = LOSE_POPUP_UI.h * targetScale;
+    const fitScale = Math.min((this.width * 0.96) / w, (this.height * 0.9) / h, 1);
+    w *= fitScale;
+    h *= fitScale;
+    const centeredY = (this.height - h) * 0.5;
+    const loweredY = centeredY;
+    const y = clamp(loweredY, 20, this.height - h - 20);
     return {
       x: (this.width - w) * 0.5,
-      y: LOSE_POPUP_UI.y,
+      y,
       w,
       h,
     };
@@ -5605,6 +5740,46 @@ class Game {
       w: 58,
       h: 58,
     };
+  }
+
+  getLoseButtonRects(popupRect = null) {
+    const popup = popupRect || this.getLosePopupRect();
+    const sx = popup.w / 646;
+    const sy = popup.h / 663;
+    const buttonY = popup.y + popup.h - 126 * sy;
+    const left = {
+      x: popup.x + 40 * sx,
+      y: buttonY,
+      w: 184 * sx,
+      h: 68 * sy,
+    };
+    const right = {
+      x: popup.x + popup.w - 40 * sx - 184 * sx,
+      y: buttonY,
+      w: 184 * sx,
+      h: 68 * sy,
+    };
+    return { left, right };
+  }
+
+  drawLoseBirdRow(ctx, popupX, popupY, popupW, popupH, alpha = 1) {
+    const sx = popupW / 646;
+    const sy = popupH / 663;
+    if (!this.losePopupBirdsImage.complete || this.losePopupBirdsImage.naturalWidth <= 0) {
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    const x = popupX + 128 * sx;
+    const y = popupY + 244 * sy;
+    const w = 390 * sx;
+    const h = 158 * sy;
+    ctx.drawImage(this.losePopupBirdsImage, x, y, w, h);
+    ctx.restore();
   }
 
   drawLoseSpaceBadge(ctx, centerX, centerY, width, height) {
@@ -5840,10 +6015,13 @@ class Game {
       h: popup.h * scale,
     };
     this.loseCloseRect = this.getLoseCloseRect(drawRect);
+    const loseButtons = this.getLoseButtonRects(drawRect);
+    this.loseContinueRect = loseButtons.left;
+    this.loseFreeRect = loseButtons.right;
 
     ctx.save();
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.fillStyle = `rgba(7, 14, 28, ${0.52 * fade})`;
+    ctx.fillStyle = `rgba(7, 14, 28, ${0.74 * fade})`;
     ctx.fillRect(0, 0, this.screenWidth, this.screenHeight);
     ctx.restore();
 
@@ -5865,6 +6043,7 @@ class Game {
         ctx.imageSmoothingQuality = "high";
       }
       ctx.drawImage(this.losePopupImage, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+      this.drawLoseBirdRow(ctx, drawRect.x, drawRect.y, drawRect.w, drawRect.h, fade);
       ctx.restore();
       return;
     }
@@ -6104,7 +6283,9 @@ class Game {
       return;
     }
     if (this.gameState === "lose") {
-      this.canvas.style.cursor = isInsideRect(x, y, this.loseCloseRect) ? "pointer" : "default";
+      const overClose = isInsideRect(x, y, this.loseCloseRect);
+      const overContinue = isInsideRect(x, y, this.loseContinueRect);
+      this.canvas.style.cursor = overClose || overContinue ? "pointer" : "default";
       return;
     }
     const overBack = isInsideRect(x, y, this.backButtonRect);
@@ -6122,6 +6303,8 @@ class Game {
     if (this.gameState === "lose") {
       if (isInsideRect(x, y, this.loseCloseRect)) {
         this.restart();
+      } else if (isInsideRect(x, y, this.loseContinueRect)) {
+        this.continueFromLoseWithOneSlot();
       }
       return;
     }
