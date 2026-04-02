@@ -415,7 +415,7 @@ const DEBUG_DEFAULTS = {
   shotBounceSpeed: 1,
   trackUnitSpeed: 980,
   queueCardCount: 7,
-  chickenSizeScale: 1.6,
+  chickenSizeScale: 1.22,
   topPanelFontSize: 67,
   topLevelPanelScale: 1.2,
   topCoinsPanelScale: 1.2,
@@ -529,6 +529,19 @@ const BLOCK_CHAR_TO_COLOR = {
   W: "white",
   Y: "yellow",
   R: "red",
+  H: "red_alt",
+  O: "orange",
+  N: "brown",
+  A: "gray",
+  P: "light_purple",
+  M: "dark_pink",
+  D: "dark_blue",
+  V: "dark_purple",
+  L: "light_green",
+  F: "pink",
+  E: "peach",
+  S: "rose",
+  T: "orchid",
   ".": null,
   " ": null,
   "_": null,
@@ -541,6 +554,19 @@ const BLOCK_COLOR_TO_PATTERN_CHAR = {
   white: "W",
   yellow: "Y",
   red: "R",
+  red_alt: "H",
+  orange: "O",
+  brown: "N",
+  gray: "A",
+  light_purple: "P",
+  dark_pink: "M",
+  dark_blue: "D",
+  dark_purple: "V",
+  light_green: "L",
+  pink: "F",
+  peach: "E",
+  rose: "S",
+  orchid: "T",
 };
 
 const BLOCK_COLOR_TO_RGB = {
@@ -550,6 +576,18 @@ const BLOCK_COLOR_TO_RGB = {
   white: { r: 245, g: 247, b: 251 },
   yellow: { r: 255, g: 215, b: 64 },
   red: { r: 239, g: 64, b: 50 },
+  orange: { r: 252, g: 150, b: 42 },
+  brown: { r: 157, g: 98, b: 61 },
+  light_purple: { r: 177, g: 142, b: 234 },
+  dark_pink: { r: 204, g: 67, b: 156 },
+  dark_blue: { r: 53, g: 97, b: 173 },
+  dark_purple: { r: 110, g: 72, b: 171 },
+  light_green: { r: 155, g: 224, b: 95 },
+  gray: { r: 156, g: 156, b: 156 },
+  pink: { r: 223, g: 122, b: 225 },
+  peach: { r: 234, g: 197, b: 150 },
+  rose: { r: 220, g: 96, b: 140 },
+  orchid: { r: 164, g: 109, b: 210 },
 };
 
 const BLOCK_COLOR_LABELS = {
@@ -559,6 +597,18 @@ const BLOCK_COLOR_LABELS = {
   white: "белый",
   yellow: "жёлтый",
   red: "красный",
+  orange: "оранжевый",
+  brown: "коричневый",
+  light_purple: "сиреневый",
+  dark_pink: "тёмно-розовый",
+  dark_blue: "тёмно-синий",
+  dark_purple: "тёмно-фиолетовый",
+  light_green: "салатовый",
+  gray: "серый",
+  pink: "розовый",
+  peach: "персиковый",
+  rose: "роза",
+  orchid: "орхидея",
 };
 
 const CHICKEN_SPRITE_SOURCE_BY_COLOR = {
@@ -577,7 +627,7 @@ const BLOCK_TILE_SOURCE_BY_COLOR = {
   white: "ui/white.png",
   yellow: "ui/yellow.png",
   red: "ui/red.png",
-  red_alt: "ui/red-1.png",
+  red_alt: "ui/hot_pink.png",
   orange: "ui/orange.png",
   brown: "ui/brown.png",
   light_purple: "ui/light_purple.png",
@@ -585,6 +635,11 @@ const BLOCK_TILE_SOURCE_BY_COLOR = {
   dark_blue: "ui/dark_blue.png",
   dark_purple: "ui/dark_purple.png",
   light_green: "ui/light_green.png",
+  gray: "ui/gray.png",
+  pink: "ui/pink.png",
+  peach: "ui/peach.png",
+  rose: "ui/rose.png",
+  orchid: "ui/orchid.png",
 };
 
 const BLOCK_TILE_COLOR_ALIASES = {
@@ -596,6 +651,8 @@ const BLOCK_TILE_COLOR_ALIASES = {
   sky: "blue",
   lime: "light_green",
   crimson: "red_alt",
+  grey: "gray",
+  lilac: "orchid",
 };
 
 const DEBUG_IMAGE_LEVEL_ID = "debug-image-level";
@@ -728,6 +785,44 @@ function getPatternCellChar(color) {
   return BLOCK_COLOR_TO_PATTERN_CHAR[color] || ".";
 }
 
+function normalizeBlockColorName(color) {
+  const normalized = String(color || "").trim().toLowerCase();
+  if (!normalized || normalized === "." || normalized === "_" || normalized === " ") {
+    return null;
+  }
+  if (Object.prototype.hasOwnProperty.call(BLOCK_COLOR_TO_RGB, normalized)) {
+    return normalized;
+  }
+  if (Object.prototype.hasOwnProperty.call(BLOCK_COLOR_CONFIG, normalized)) {
+    return normalized;
+  }
+  if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, normalized)) {
+    return normalized;
+  }
+  const alias = BLOCK_TILE_COLOR_ALIASES[normalized];
+  if (alias) {
+    return alias;
+  }
+  return normalized;
+}
+
+function normalizeColorMatrixCell(cell) {
+  if (cell === undefined || cell === null) {
+    return null;
+  }
+  if (typeof cell === "string") {
+    const raw = cell.trim();
+    if (!raw || raw === "." || raw === "_" || raw === " ") {
+      return null;
+    }
+    if (raw.length === 1) {
+      return getPatternCellColor(raw);
+    }
+    return normalizeBlockColorName(raw);
+  }
+  return null;
+}
+
 function clampDebugImageGridSize(value) {
   return clamp(Math.round(Number(value) || 18), DEBUG_IMAGE_GRID_MIN, DEBUG_IMAGE_GRID_MAX);
 }
@@ -764,6 +859,60 @@ function getNearestBlockColor(r, g, b) {
   return bestColor;
 }
 
+function srgbToLinear(channel) {
+  const value = clamp(channel, 0, 255) / 255;
+  if (value <= 0.04045) {
+    return value / 12.92;
+  }
+  return Math.pow((value + 0.055) / 1.055, 2.4);
+}
+
+function rgbToLab(r, g, b) {
+  const lr = srgbToLinear(r);
+  const lg = srgbToLinear(g);
+  const lb = srgbToLinear(b);
+
+  const x = lr * 0.4124564 + lg * 0.3575761 + lb * 0.1804375;
+  const y = lr * 0.2126729 + lg * 0.7151522 + lb * 0.072175;
+  const z = lr * 0.0193339 + lg * 0.119192 + lb * 0.9503041;
+
+  const whiteX = 0.95047;
+  const whiteY = 1;
+  const whiteZ = 1.08883;
+
+  const fx = x / whiteX;
+  const fy = y / whiteY;
+  const fz = z / whiteZ;
+
+  const transform = (value) => {
+    const epsilon = 216 / 24389;
+    const kappa = 24389 / 27;
+    return value > epsilon ? Math.cbrt(value) : (kappa * value + 16) / 116;
+  };
+
+  const tx = transform(fx);
+  const ty = transform(fy);
+  const tz = transform(fz);
+
+  return {
+    l: 116 * ty - 16,
+    a: 500 * (tx - ty),
+    b: 200 * (ty - tz),
+  };
+}
+
+function unpremultiplyRgba(r, g, b, a) {
+  if (a <= 0) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  const alpha = clamp(a, 1, 255);
+  return {
+    r: clamp((r * 255) / alpha, 0, 255),
+    g: clamp((g * 255) / alpha, 0, 255),
+    b: clamp((b * 255) / alpha, 0, 255),
+  };
+}
+
 function getLuma(r, g, b) {
   return r * 0.2126 + g * 0.7152 + b * 0.0722;
 }
@@ -791,59 +940,6 @@ function getHueDegrees(r, g, b) {
     hue += 360;
   }
   return hue;
-}
-
-function pickSampledBlockColor(r, g, b, a) {
-  if (a < 56) {
-    return null;
-  }
-  const alpha = Math.max(1, a);
-  const unpremulR = clamp((r * 255) / alpha, 0, 255);
-  const unpremulG = clamp((g * 255) / alpha, 0, 255);
-  const unpremulB = clamp((b * 255) / alpha, 0, 255);
-  const maxChannel = Math.max(unpremulR, unpremulG, unpremulB);
-  const minChannel = Math.min(unpremulR, unpremulG, unpremulB);
-  const chroma = maxChannel - minChannel;
-  const luma = getLuma(unpremulR, unpremulG, unpremulB);
-  const saturation = maxChannel > 0 ? chroma / maxChannel : 0;
-
-  if (luma <= 58) {
-    return "black";
-  }
-  if (chroma <= 22) {
-    return luma >= 148 ? "white" : "black";
-  }
-  if (luma >= 226 && saturation <= 0.36) {
-    return "white";
-  }
-  if (luma >= 190 && saturation <= 0.62) {
-    return "white";
-  }
-  if (luma >= 168 && saturation <= 0.3) {
-    return "white";
-  }
-
-  const hue = getHueDegrees(unpremulR, unpremulG, unpremulB);
-  if (hue !== null) {
-    if (hue >= 175 && hue <= 235) {
-      return "blue";
-    }
-    if (hue >= 80 && hue <= 165 && saturation >= 0.22) {
-      return "green";
-    }
-    if (hue >= 25 && hue <= 70 && saturation >= 0.2) {
-      return "yellow";
-    }
-    if ((hue >= 345 || hue <= 15) && saturation >= 0.2) {
-      return "red";
-    }
-  }
-
-  if (luma >= 170) {
-    return "white";
-  }
-
-  return getNearestBlockColor(unpremulR, unpremulG, unpremulB);
 }
 
 let CURRENT_LEVEL = getLevelConfig(DEFAULT_LEVEL_ID);
@@ -1883,7 +1979,9 @@ class Game {
     this.blockTemplateImage.src = "ui/block.png";
     this.blockTemplateImage.decoding = "sync";
     this.blockTileImageByColor = {};
+    this.blockTileColorSampleByColor = {};
     this.blockTileUsesSourceImage = {};
+    this.debugBlockColorPalette = [];
     this.generatedBackdropCache = null;
 
     this.sprites = {
@@ -1903,6 +2001,7 @@ class Game {
     this.chickenSpriteImageByColor = {};
     this.initChickenSpriteImages();
     this.initBlockTileImages();
+    this.rebuildBlockColorSamplerPalette();
 
     const staticSceneLayer = createBufferCanvas(this.width, this.height, false);
     this.staticSceneLayer = staticSceneLayer.canvas;
@@ -2182,15 +2281,266 @@ class Game {
 
   initBlockTileImages() {
     for (const [color, src] of Object.entries(BLOCK_TILE_SOURCE_BY_COLOR)) {
-      const image = new Image();
-      image.decoding = "sync";
-      image.src = src;
-      image.onload = () => {
-        this.buildReferenceAssets();
-        this.invalidate(false);
-      };
-      this.blockTileImageByColor[color] = image;
+      this.registerBlockTileImageSource(color, src);
     }
+    void this.discoverBlockTileSourcesFromUiDirectory();
+  }
+
+  registerBlockTileImageSource(color, src) {
+    const normalizedColor = String(color || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    const normalizedSrc = String(src || "").trim();
+    if (!normalizedColor || !normalizedSrc) {
+      return;
+    }
+    if (this.blockTileImageByColor[normalizedColor]) {
+      return;
+    }
+    BLOCK_TILE_SOURCE_BY_COLOR[normalizedColor] = normalizedSrc;
+    const image = new Image();
+    image.decoding = "sync";
+    image.src = normalizedSrc;
+    image.onload = () => {
+      try {
+        const sample = this.extractRepresentativeColorFromImage(image);
+        if (sample) {
+          this.blockTileColorSampleByColor[normalizedColor] = sample;
+          BLOCK_COLOR_TO_RGB[normalizedColor] = sample;
+        }
+      } catch {
+        // On file://, reading pixels can throw SecurityError (tainted canvas).
+      }
+      this.rebuildBlockColorSamplerPalette();
+      this.buildReferenceAssets();
+      this.invalidate(false);
+    };
+    image.onerror = () => {
+      delete this.blockTileColorSampleByColor[normalizedColor];
+      this.rebuildBlockColorSamplerPalette();
+    };
+    this.blockTileImageByColor[normalizedColor] = image;
+  }
+
+  async discoverBlockTileSourcesFromUiDirectory() {
+    if (typeof fetch !== "function") {
+      return;
+    }
+    let response;
+    try {
+      response = await fetch("ui/", { cache: "no-store" });
+    } catch {
+      return;
+    }
+    if (!response?.ok) {
+      return;
+    }
+    let html = "";
+    try {
+      html = await response.text();
+    } catch {
+      return;
+    }
+    if (!html || typeof html !== "string") {
+      return;
+    }
+    const hrefMatches = [...html.matchAll(/href\s*=\s*["']([^"']+?\.png(?:\?[^"']*)?)["']/gi)];
+    if (hrefMatches.length === 0) {
+      return;
+    }
+    const blockedTokens = [
+      "chicken",
+      "button",
+      "popup",
+      "booster",
+      "background",
+      "overlay",
+      "railway",
+      "wood",
+      "bg",
+      "coin",
+      "number",
+      "lock",
+      "timer",
+      "rectangle",
+      "loose",
+      "lose",
+      "greenmon",
+      "inactive",
+      "restart",
+      "back",
+    ];
+
+    for (const match of hrefMatches) {
+      const rawHref = String(match[1] || "").trim();
+      if (!rawHref) {
+        continue;
+      }
+      const decodedHref = decodeURIComponent(rawHref.split("?")[0].split("#")[0]);
+      const fileName = decodedHref.split("/").filter(Boolean).pop() || "";
+      if (!fileName.toLowerCase().endsWith(".png")) {
+        continue;
+      }
+      const baseName = fileName.slice(0, -4).trim().toLowerCase();
+      const colorKey = baseName.replace(/[\s-]+/g, "_");
+      if (!/^[a-z0-9_]+$/.test(colorKey)) {
+        continue;
+      }
+      if (blockedTokens.some((token) => colorKey.includes(token))) {
+        continue;
+      }
+      if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, colorKey)) {
+        continue;
+      }
+      this.registerBlockTileImageSource(colorKey, `ui/${fileName}`);
+    }
+  }
+
+  extractRepresentativeColorFromImage(image) {
+    const width = Math.max(1, Math.round(image.naturalWidth || image.width || 0));
+    const height = Math.max(1, Math.round(image.naturalHeight || image.height || 0));
+    if (width <= 0 || height <= 0) {
+      return null;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
+    if (!ctx) {
+      return null;
+    }
+    ctx.clearRect(0, 0, width, height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, 0, 0, width, height);
+    let imageData;
+    try {
+      imageData = ctx.getImageData(0, 0, width, height);
+    } catch {
+      return null;
+    }
+    const { data } = imageData;
+    let sumR = 0;
+    let sumG = 0;
+    let sumB = 0;
+    let weightSum = 0;
+    const buckets = new Map();
+    for (let i = 0; i < data.length; i += 4) {
+      const alpha = data[i + 3];
+      if (alpha < 20) {
+        continue;
+      }
+      const weight = alpha / 255;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      sumR += r * weight;
+      sumG += g * weight;
+      sumB += b * weight;
+      weightSum += weight;
+      const key = `${r >> 4}-${g >> 4}-${b >> 4}`;
+      buckets.set(key, (buckets.get(key) || 0) + weight);
+    }
+    if (weightSum <= 0) {
+      return null;
+    }
+    let dominantKey = "";
+    let dominantWeight = -1;
+    for (const [key, weight] of buckets.entries()) {
+      if (weight > dominantWeight) {
+        dominantWeight = weight;
+        dominantKey = key;
+      }
+    }
+    const [bucketR = 0, bucketG = 0, bucketB = 0] = dominantKey
+      .split("-")
+      .map((value) => clamp(Number(value) || 0, 0, 15));
+    const dominantR = bucketR * 16 + 8;
+    const dominantG = bucketG * 16 + 8;
+    const dominantB = bucketB * 16 + 8;
+    const avgR = sumR / weightSum;
+    const avgG = sumG / weightSum;
+    const avgB = sumB / weightSum;
+    return {
+      r: Math.round(clamp(lerp(avgR, dominantR, 0.62), 0, 255)),
+      g: Math.round(clamp(lerp(avgG, dominantG, 0.62), 0, 255)),
+      b: Math.round(clamp(lerp(avgB, dominantB, 0.62), 0, 255)),
+    };
+  }
+
+  rebuildBlockColorSamplerPalette() {
+    const paletteByColor = new Map();
+    const addSample = (color, sample, priority = 0) => {
+      const normalizedColor = normalizeBlockColorName(color);
+      if (!normalizedColor || !sample) {
+        return;
+      }
+      const current = paletteByColor.get(normalizedColor);
+      if (!current || priority >= current.priority) {
+        paletteByColor.set(normalizedColor, {
+          color: normalizedColor,
+          r: clamp(Math.round(sample.r), 0, 255),
+          g: clamp(Math.round(sample.g), 0, 255),
+          b: clamp(Math.round(sample.b), 0, 255),
+          priority,
+        });
+      }
+    };
+
+    for (const [color, sample] of Object.entries(BLOCK_COLOR_TO_RGB)) {
+      addSample(color, sample, 0);
+    }
+    for (const [color, sample] of Object.entries(this.blockTileColorSampleByColor)) {
+      addSample(color, sample, 2);
+    }
+
+    const palette = [];
+    for (const entry of paletteByColor.values()) {
+      palette.push({
+        color: entry.color,
+        r: entry.r,
+        g: entry.g,
+        b: entry.b,
+        lab: rgbToLab(entry.r, entry.g, entry.b),
+      });
+    }
+    this.debugBlockColorPalette = palette;
+  }
+
+  getNearestDebugPaletteColor(r, g, b) {
+    const palette = this.debugBlockColorPalette;
+    if (!Array.isArray(palette) || palette.length === 0) {
+      return getNearestBlockColor(r, g, b);
+    }
+    const targetLab = rgbToLab(r, g, b);
+    let bestColor = palette[0].color;
+    let bestDistance = Infinity;
+    for (const sample of palette) {
+      const dL = targetLab.l - sample.lab.l;
+      const dA = targetLab.a - sample.lab.a;
+      const dB = targetLab.b - sample.lab.b;
+      const dRgbR = r - sample.r;
+      const dRgbG = g - sample.g;
+      const dRgbB = b - sample.b;
+      const distanceSq =
+        dL * dL
+        + dA * dA
+        + dB * dB
+        + (dRgbR * dRgbR + dRgbG * dRgbG + dRgbB * dRgbB) * 0.0012;
+      if (distanceSq < bestDistance) {
+        bestDistance = distanceSq;
+        bestColor = sample.color;
+      }
+    }
+    return bestColor;
+  }
+
+  pickSampledBlockColor(r, g, b, a) {
+    if (a < 56) {
+      return null;
+    }
+    const unpremul = unpremultiplyRgba(r, g, b, a);
+    return this.getNearestDebugPaletteColor(unpremul.r, unpremul.g, unpremul.b);
   }
 
   resolveBlockTileColorKey(color) {
@@ -3845,6 +4195,13 @@ class Game {
   }
 
   getCellColor(col, row) {
+    const matrix = CURRENT_LEVEL?.pixelArt?.colorMatrix;
+    if (Array.isArray(matrix)) {
+      const normalized = normalizeColorMatrixCell(matrix[row]?.[col]);
+      if (normalized !== null) {
+        return normalized;
+      }
+    }
     const fallbackRow = FALLBACK_FIELD_PATTERN[row] || "";
     const fallbackCell = fallbackRow[col] || ".";
     const parsedColor = getPatternCellColor(fallbackCell);
@@ -5743,7 +6100,7 @@ class Game {
     w *= fitScale;
     h *= fitScale;
     const centeredY = (this.height - h) * 0.5;
-    const loweredY = centeredY;
+    const loweredY = centeredY + this.height * 0.2;
     const y = clamp(loweredY, 20, this.height - h - 20);
     return {
       x: (this.width - w) * 0.5,
@@ -6530,9 +6887,8 @@ class Game {
     const seen = new Set();
     const colors = [];
     for (let row = 0; row < LAYOUT.fieldRows; row++) {
-      const line = FALLBACK_FIELD_PATTERN[row] || "";
       for (let col = 0; col < LAYOUT.fieldCols; col++) {
-        const color = getPatternCellColor(line[col]);
+        const color = this.getCellColor(col, row);
         if (!color || seen.has(color)) {
           continue;
         }
@@ -6544,6 +6900,46 @@ class Game {
       colors.push("blue", "white", "black");
     }
     return colors;
+  }
+
+  normalizeColorMatrixForLayout(colorMatrix) {
+    const normalizedRows = [];
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      const sourceRow = Array.isArray(colorMatrix?.[row]) ? colorMatrix[row] : [];
+      const targetRow = [];
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        targetRow.push(normalizeColorMatrixCell(sourceRow[col]));
+      }
+      normalizedRows.push(targetRow);
+    }
+    return normalizedRows;
+  }
+
+  deriveColorMatrixFromFallbackPattern() {
+    const matrix = [];
+    for (let row = 0; row < LAYOUT.fieldRows; row++) {
+      const line = FALLBACK_FIELD_PATTERN[row] || "";
+      const nextRow = [];
+      for (let col = 0; col < LAYOUT.fieldCols; col++) {
+        nextRow.push(getPatternCellColor(line[col]));
+      }
+      matrix.push(nextRow);
+    }
+    return matrix;
+  }
+
+  ensureCurrentLevelColorMatrix() {
+    if (!CURRENT_LEVEL.pixelArt || typeof CURRENT_LEVEL.pixelArt !== "object") {
+      CURRENT_LEVEL.pixelArt = {
+        id: String(CURRENT_LEVEL.id || this.currentLevelId || "debug-level"),
+      };
+    }
+    const sourceMatrix = Array.isArray(CURRENT_LEVEL.pixelArt.colorMatrix)
+      ? CURRENT_LEVEL.pixelArt.colorMatrix
+      : this.deriveColorMatrixFromFallbackPattern();
+    const normalized = this.normalizeColorMatrixForLayout(sourceMatrix);
+    CURRENT_LEVEL.pixelArt.colorMatrix = normalized;
+    return normalized;
   }
 
   syncDebugPaintColorOptions() {
@@ -6581,22 +6977,25 @@ class Game {
     while (rowChars.length < LAYOUT.fieldCols) {
       rowChars.push(".");
     }
-    rowChars[col] = colorOrNull ? getPatternCellChar(colorOrNull) : ".";
+    const normalizedColor = normalizeBlockColorName(colorOrNull);
+    rowChars[col] = normalizedColor ? getPatternCellChar(normalizedColor) : ".";
     FALLBACK_FIELD_PATTERN[row] = rowChars.join("");
+    const matrix = this.ensureCurrentLevelColorMatrix();
+    matrix[row][col] = normalizedColor;
+    CURRENT_LEVEL.pixelArt.colorMatrix = matrix;
   }
 
   applyPatternEditToCurrentLevel() {
     CURRENT_LEVEL.fallbackFieldPattern = [...FALLBACK_FIELD_PATTERN];
-    if (CURRENT_LEVEL.pixelArt && typeof CURRENT_LEVEL.pixelArt === "object") {
-      const pattern = [...FALLBACK_FIELD_PATTERN];
-      CURRENT_LEVEL.pixelArt.pattern = pattern;
-      CURRENT_LEVEL.pixelArt.colorMatrix = pattern.map((line) => [...line].map((cell) => getPatternCellColor(cell)));
-      if (!CURRENT_LEVEL.pixelArt.grid) {
-        CURRENT_LEVEL.pixelArt.grid = {};
-      }
-      CURRENT_LEVEL.pixelArt.grid.cols = LAYOUT.fieldCols;
-      CURRENT_LEVEL.pixelArt.grid.rows = LAYOUT.fieldRows;
+    const pattern = [...FALLBACK_FIELD_PATTERN];
+    const colorMatrix = this.ensureCurrentLevelColorMatrix();
+    CURRENT_LEVEL.pixelArt.pattern = pattern;
+    CURRENT_LEVEL.pixelArt.colorMatrix = colorMatrix;
+    if (!CURRENT_LEVEL.pixelArt.grid) {
+      CURRENT_LEVEL.pixelArt.grid = {};
     }
+    CURRENT_LEVEL.pixelArt.grid.cols = LAYOUT.fieldCols;
+    CURRENT_LEVEL.pixelArt.grid.rows = LAYOUT.fieldRows;
     upsertLevelDefinition(CURRENT_LEVEL);
     this.syncDebugPaintColorOptions();
   }
@@ -6700,6 +7099,36 @@ class Game {
     return settings;
   }
 
+  persistCurrentLevelFieldGeometryFromLayout() {
+    if (!CURRENT_LEVEL || !CURRENT_LEVEL.layout || !LAYOUT) {
+      return;
+    }
+    CURRENT_LEVEL.layout.fieldCols = LAYOUT.fieldCols;
+    CURRENT_LEVEL.layout.fieldRows = LAYOUT.fieldRows;
+    CURRENT_LEVEL.layout.fieldStep = LAYOUT.fieldStep;
+    CURRENT_LEVEL.layout.cellSize = LAYOUT.cellSize;
+    CURRENT_LEVEL.layout.fieldX = LAYOUT.fieldX;
+    CURRENT_LEVEL.layout.fieldY = LAYOUT.fieldY;
+
+    if (!CURRENT_LEVEL.referenceGrid || typeof CURRENT_LEVEL.referenceGrid !== "object") {
+      CURRENT_LEVEL.referenceGrid = {};
+    }
+    CURRENT_LEVEL.referenceGrid.x = LAYOUT.fieldX;
+    CURRENT_LEVEL.referenceGrid.y = LAYOUT.fieldY;
+    CURRENT_LEVEL.referenceGrid.step = LAYOUT.fieldStep;
+    CURRENT_LEVEL.referenceGrid.cellSize = LAYOUT.cellSize;
+
+    if (CURRENT_LEVEL.pixelArt && typeof CURRENT_LEVEL.pixelArt === "object") {
+      if (!CURRENT_LEVEL.pixelArt.grid || typeof CURRENT_LEVEL.pixelArt.grid !== "object") {
+        CURRENT_LEVEL.pixelArt.grid = {};
+      }
+      CURRENT_LEVEL.pixelArt.grid.cols = LAYOUT.fieldCols;
+      CURRENT_LEVEL.pixelArt.grid.rows = LAYOUT.fieldRows;
+    }
+
+    upsertLevelDefinition(CURRENT_LEVEL);
+  }
+
   applyDebugImageScale(nextScale) {
     const clamped = clampDebugImageScale(nextScale);
     this.setDebugImageSettingsForLevel(this.currentLevelId, { imageScale: clamped });
@@ -6707,6 +7136,7 @@ class Game {
       CURRENT_LEVEL.pixelArt.artScale = clamped;
     }
     this.applyDebugLayout();
+    this.persistCurrentLevelFieldGeometryFromLayout();
     this.invalidate(false);
     return clamped;
   }
@@ -6735,6 +7165,7 @@ class Game {
       CURRENT_LEVEL.pixelArt.offsetY = clamped;
     }
     this.applyDebugLayout();
+    this.persistCurrentLevelFieldGeometryFromLayout();
     this.invalidate(false);
     return clamped;
   }
@@ -6814,7 +7245,7 @@ class Game {
       const nextRow = [];
       for (let col = 0; col < cols; col++) {
         const index = (row * cols + col) * 4;
-        const color = pickSampledBlockColor(
+        const color = this.pickSampledBlockColor(
           data[index],
           data[index + 1],
           data[index + 2],

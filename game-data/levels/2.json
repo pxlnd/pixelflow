@@ -1,5 +1,5 @@
 {
-  "exportedAt": "2026-04-02T09:50:54.733Z",
+  "exportedAt": "2026-04-02T11:57:37.514Z",
   "levelNumber": 2,
   "level": {
     "id": "2",
@@ -37,7 +37,7 @@
       "name": "image-removebg-preview 2.png",
       "sourceFileName": "image-removebg-preview 2.png",
       "artScale": 1,
-      "offsetY": -13,
+      "offsetY": -19,
       "grid": {
         "cols": 26,
         "rows": 26
