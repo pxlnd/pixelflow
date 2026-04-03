@@ -1,5 +1,28 @@
 Original prompt: Твоя задача: создать полностью рабочий мини-клон мобильной 2D puzzle-game по приложенному референс-скриншоту. Нужен один локально запускаемый HTML/CSS/JS vertical slice с уровнем, конвейером, автоатакой, победой и restart.
 
+- 2026-04-03: swapped level order so the Minecraft creeper face is now level 1 and the previous level 1 moved to level 8.
+- Kept the tutorial behavior intact by moving the level data instead of touching tutorial logic; tutorial remains bound to `levelId === "1"`, so it now runs on the creeper level automatically.
+- Verification: `game-data/levels/1.json` now contains the creeper pattern, `game-data/levels/8.json` contains the old first level pattern, and `main.js` still uses `LEVEL_ONE_TUTORIAL_ID = "1"`.
+
+- 2026-04-03: restored the missing Minecraft creeper face as level 8.
+- Added `/game-data/levels/8.json` in the same autoloaded JSON format as the existing levels, using a 20x20 green/black creeper-face pattern so it appears automatically as the eighth level.
+- Verification: parsed `8.json` successfully and confirmed the autoload path now contains `1.json` through `8.json`.
+
+- 2026-04-03: fixed the remaining rail deadlock that still left units looping/parking instead of finishing the drawing.
+- Root cause: shot side detection was anchored to the playfield rectangle instead of the actual rounded rail, and `getAllowedReachableProbesForTarget()` still collapsed valid shot windows to a subset of sides. On inner-corner endgame blocks this produced false negatives: real windows existed on the rail, but runtime classified those positions under the wrong side and never fired.
+- Fix:
+- `getInwardShootDirection()` in `main.js` now resolves from the nearest side of `conveyor.trackRect`, so top/left/right/bottom firing uses the real rail geometry instead of the field box.
+- `getAllowedReachableProbesForTarget()` now keeps every probe side that has a real sampled rail window instead of artificially reducing the target to one axis.
+- Verification:
+- `node --check main.js`
+- deterministic Playwright solve: `/tmp/pixelflow-playwright/solve_no_tutorial.js` now reaches `FINAL {"remaining":0,...}` and ends in `victory` instead of stalling at `remaining=176` / `320`.
+- targeted replay: `/tmp/pixelflow-playwright/trace_target43_runtime.js` previously reproduced the last inner-corner deadlock; after the fix the same setup no longer reaches that stuck state and reports immediate `remaining: 0, state: "victory"`.
+
+- 2026-04-03: fixed another rail deadlock where units could keep qualifying for "one more lap" without any real firing window on the actual track.
+- Root cause: `canColorShootNextSpiralTarget()` only used abstract side probes from the field, so in some layouts it reported a reachable target even though no sampled point on the rounded rail could ever produce `findTargetOnLine()`.
+- Fix: added `canColorShootNextSpiralTargetFromTrack()` in `main.js`; now the keep-loop decision is confirmed against full-loop track samples using the same inward-direction and target-line checks as runtime firing.
+- Verification: `node --check main.js` passed. Deterministic Playwright relaunch scenario (`/tmp/pixelflow-playwright/repro_relaunch.js`) after the fix shows moving black units still firing (`remaining 299 -> 255`) and then parking instead of getting stuck in a false endless travel state.
+
 - 2026-04-03: fixed rail-shot reachability regression for stacked targets in `main.js`.
 - Root cause: `getInwardShootDirection()` and `hasTargetForColor()` only considered the bottom lane. After the first placed block, the next spiral target could become unreachable from bottom even though it was still reachable from top/left/right, so later birds made a full lap and parked.
 - Fix: inward shooting now resolves from the nearest aligned side of the field, and `canColorShootNextSpiralTarget()` probes all four inward lanes before deciding a color has no valid target.
@@ -27,6 +50,18 @@ Original prompt: Твоя задача: создать полностью раб
 - 2026-04-03: wave effect re-added on top of the new monotonic ghost gradient.
 - Kept current behavior (size grows toward first block + tail fades to full zero), and added a moving Gaussian wave boost for scale/alpha/glow.
 - Verification screenshot: `output/web-game/ghost-grow-fade-wave/shot.png`.
+- 2026-04-03: contour ghost targeting update per new user request.
+- Ghost targets now follow the active build set from `getNextSpiralTargets()` in `main.js` instead of sequential lookahead fade.
+- Shooting is no longer forced to a single next spiral block: `findTargetOnLine()`, `canColorShootNextSpiralTarget()`, and `damageBlock()` now work with any currently visible contour ghost block, so contour blocks can be filled in arbitrary order.
+- `drawTargetSilhouette()` switched to stable contour rendering (no tail-to-zero transparency chain), so the whole active contour remains visible.
+- 2026-04-03: build-priority restriction pass after user report about side overlap and second green bird instability.
+- `getNextSpiralTargets()` now strictly exposes only the current innermost spiral layer (`min spiralIndex`) with a guard against building a block that still has pending direct inner neighbors.
+- `findTargetOnLine()` now uses `getSpiralBuildPriority()` / `isSpiralBuildPriorityBetter()` to prioritize inner targets and deeper inward hits on the same shooting line, instead of the nearest outer hit.
+- `damageBlock()` keeps the strict active-target check, now tied to the new inner-priority target set.
+- Local validation: `node --check main.js` passed.
+- 2026-04-03: ghost contour rendering decoupled from build-target restriction per user request.
+- Added `getContourGhostTargets()` in `main.js`: it collects all pending cells adjacent to already built cells, so ghost tiles form a live contour around the ready part of the picture.
+- `drawTargetSilhouette()` and `hasActiveAnimations()` now use contour targets (`getContourGhostTargets()`), so contour ghost visualization updates continuously in runtime.
 - 2026-04-03: fixed level title normalization for autoloaded generated levels.
 - Root cause: `loadLevelJSONByNumber()` forcibly renamed names starting with `Generated...` to `Level N`.
 - Fix: removed `^generated` override from normalization, so level 3 title now keeps `Generated 35x35` in the top panel.

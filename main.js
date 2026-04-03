@@ -288,7 +288,6 @@ const FIXED_DT = 1 / 60;
 const MAX_ACTIVE_UNITS = 5;
 const FIRE_INTERVAL = 0.02;
 const MAX_BURST_SHOTS_PER_TICK = 24;
-const MAX_SPIRAL_GHOST_LOOKAHEAD_COUNT = 15;
 const BULLET_RADIUS = 8;
 const SHOT_TRAIL_DURATION = 0.16;
 const SHOT_BOUNCE_DURATION = 0.16;
@@ -2278,6 +2277,12 @@ class Game {
     this.spiralTraversalOrderByCell = this.buildSpiralTraversalOrderMap(LAYOUT.fieldCols, LAYOUT.fieldRows);
     this.blocks = [];
     this.blocksBySpiral = [];
+    this.blockByCell = new Map();
+    this.targetingCacheVersion = 1;
+    this.allowedReachableProbeCache = new Map();
+    this.trackProbeWindowCache = new Map();
+    this.trackSideSamples = null;
+    this.trackSideSamplesKey = "";
     this.units = [];
     this.projectiles = [];
     this.particles = [];
@@ -3796,6 +3801,8 @@ class Game {
     this.blocksBySpiral = this.blocks
       .slice()
       .sort((a, b) => (a.spiralIndex - b.spiralIndex) || (a.spiralOrder - b.spiralOrder));
+    this.blockByCell = new Map(this.blocks.map((block) => [`${block.col},${block.row}`, block]));
+    this.invalidateTargetingCaches();
     this.units = [];
     this.projectiles = [];
     this.particles = [];
@@ -4045,6 +4052,7 @@ class Game {
     LAYOUT.spawnPoint.x = Math.round(trackCenterX + baseSpawnOffsetX * trackScale);
     LAYOUT.spawnPoint.y = Math.round(baseTrackCenterYForSpawn + baseSpawnOffsetY * trackScale);
     this.conveyor.setTrackRect(LAYOUT.track, LAYOUT.spawnPoint);
+    this.invalidateTargetingCaches(true);
 
     const runtimeDebugImageScale = this.getDebugImageScale();
     LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * trackScale * runtimeDebugImageScale));
@@ -4232,6 +4240,8 @@ class Game {
     this.cards = [];
     this.blocks = [];
     this.blocksBySpiral = [];
+    this.blockByCell = new Map();
+    this.invalidateTargetingCaches(true);
     this.setWagonIdle();
     this.applyDebugLayout();
     if (this.queueCardsInput) {
@@ -5410,6 +5420,19 @@ class Game {
   }
 
   getInwardShootDirection(sourcePoint) {
+    const trackRect = this.conveyor?.trackRect;
+    if (trackRect) {
+      const closestTrackSide = [
+        { distance: Math.abs(sourcePoint.y - trackRect.y), direction: { x: 0, y: 1, side: "top" } },
+        { distance: Math.abs(sourcePoint.y - (trackRect.y + trackRect.h)), direction: { x: 0, y: -1, side: "bottom" } },
+        { distance: Math.abs(sourcePoint.x - trackRect.x), direction: { x: 1, y: 0, side: "left" } },
+        { distance: Math.abs(sourcePoint.x - (trackRect.x + trackRect.w)), direction: { x: -1, y: 0, side: "right" } },
+      ].sort((a, b) => a.distance - b.distance)[0];
+      if (closestTrackSide?.direction) {
+        return closestTrackSide.direction;
+      }
+    }
+
     const fieldWidth = LAYOUT.fieldCols * LAYOUT.fieldStep;
     const fieldHeight = LAYOUT.fieldRows * LAYOUT.fieldStep;
     const left = LAYOUT.fieldX;
@@ -5438,8 +5461,7 @@ class Game {
         return candidate.direction;
       }
     }
-
-    return null;
+    return distances[0]?.direction || null;
   }
 
   getLineHitForBlock(sourcePoint, direction, block, lineHalfWidth) {
@@ -5455,6 +5477,10 @@ class Game {
       return null;
     }
     return { forwardDistance, sideDistance };
+  }
+
+  getShotLineHalfWidth() {
+    return Math.max(8, LAYOUT.cellSize * 0.48);
   }
 
   isPathBlockedByPlacedBlocks(sourcePoint, direction, targetForwardDistance, lineHalfWidth, ignoreBlockId = null) {
@@ -5485,20 +5511,126 @@ class Game {
   }
 
   getNextSpiralTargets() {
-    const totalBlocks = this.blocksBySpiral.length;
-    const filledBlocks = Math.max(0, totalBlocks - this.remainingBlocks);
-    const dynamicLookahead = clamp(filledBlocks + 1, 1, MAX_SPIRAL_GHOST_LOOKAHEAD_COUNT);
-    const targets = [];
+    let minPendingSpiralIndex = Number.POSITIVE_INFINITY;
+
     for (const block of this.blocksBySpiral) {
       if (block.alive) {
         continue;
       }
+      minPendingSpiralIndex = Math.min(minPendingSpiralIndex, block.spiralIndex);
+    }
+    if (!Number.isFinite(minPendingSpiralIndex)) {
+      return [];
+    }
+
+    const targets = [];
+    for (const block of this.blocksBySpiral) {
+      if (block.alive || block.spiralIndex !== minPendingSpiralIndex) {
+        continue;
+      }
+      // Never allow building an outer-side block while a direct inner neighbor is still pending.
+      let hasPendingInnerNeighbor = false;
+      const neighbors = [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ];
+      for (const [dx, dy] of neighbors) {
+        const neighbor = this.blockByCell.get(`${block.col + dx},${block.row + dy}`);
+        if (!neighbor) {
+          continue;
+        }
+        if (neighbor.spiralIndex < block.spiralIndex && !neighbor.alive) {
+          hasPendingInnerNeighbor = true;
+          break;
+        }
+      }
+      if (hasPendingInnerNeighbor) {
+        continue;
+      }
       targets.push(block);
-      if (targets.length >= dynamicLookahead) {
+    }
+
+    if (targets.length > 0) {
+      targets.sort((a, b) => (a.spiralOrder - b.spiralOrder) || (a.id - b.id));
+      return targets;
+    }
+
+    // Safety fallback: if strict filter removed everything, keep inner ring available.
+    const fallbackTargets = [];
+    for (const block of this.blocksBySpiral) {
+      if (!block.alive && block.spiralIndex === minPendingSpiralIndex) {
+        fallbackTargets.push(block);
+      }
+    }
+    fallbackTargets.sort((a, b) => (a.spiralOrder - b.spiralOrder) || (a.id - b.id));
+    return fallbackTargets;
+  }
+
+  getContourGhostTargets() {
+    if (this.remainingBlocks <= 0) {
+      return [];
+    }
+    const hasFilledBlocks = this.remainingBlocks < this.blocks.length;
+    if (!hasFilledBlocks) {
+      return this.getNextSpiralTargets();
+    }
+
+    const contourTargets = [];
+    const neighbors = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ];
+
+    for (const block of this.blocksBySpiral) {
+      if (block.alive) {
+        continue;
+      }
+      for (const [dx, dy] of neighbors) {
+        const neighbor = this.blockByCell.get(`${block.col + dx},${block.row + dy}`);
+        if (!neighbor || !neighbor.alive) {
+          continue;
+        }
+        contourTargets.push(block);
         break;
       }
     }
-    return targets;
+
+    if (contourTargets.length === 0) {
+      return this.getNextSpiralTargets();
+    }
+    contourTargets.sort((a, b) => (a.spiralIndex - b.spiralIndex) || (a.spiralOrder - b.spiralOrder) || (a.id - b.id));
+    return contourTargets;
+  }
+
+  getSpiralBuildPriority(target, forwardDistance) {
+    const spiralIndex = Number.isFinite(target?.spiralIndex) ? target.spiralIndex : Number.MAX_SAFE_INTEGER;
+    const distancePriority = Number.isFinite(forwardDistance) ? -forwardDistance : Number.MAX_SAFE_INTEGER;
+    const spiralOrder = Number.isFinite(target?.spiralOrder) ? target.spiralOrder : Number.MAX_SAFE_INTEGER;
+    return {
+      spiralIndex,
+      distancePriority,
+      spiralOrder,
+    };
+  }
+
+  isSpiralBuildPriorityBetter(next, current) {
+    if (!current) {
+      return true;
+    }
+    if (next.spiralIndex !== current.spiralIndex) {
+      return next.spiralIndex < current.spiralIndex;
+    }
+    if (next.distancePriority !== current.distancePriority) {
+      return next.distancePriority < current.distancePriority;
+    }
+    if (next.spiralOrder !== current.spiralOrder) {
+      return next.spiralOrder < current.spiralOrder;
+    }
+    return false;
   }
 
   getFirstPendingSpiralBlock() {
@@ -5550,6 +5682,86 @@ class Game {
     ].sort((a, b) => (a.distance - b.distance) || (preferenceRank[a.side] - preferenceRank[b.side]));
   }
 
+  invalidateTargetingCaches(clearTrackSamples = false) {
+    this.targetingCacheVersion += 1;
+    this.allowedReachableProbeCache.clear();
+    this.trackProbeWindowCache.clear();
+    if (clearTrackSamples) {
+      this.trackSideSamples = null;
+      this.trackSideSamplesKey = "";
+    }
+  }
+
+  getTrackSideSamples() {
+    const conveyor = this.conveyor;
+    const trackRect = conveyor?.trackRect;
+    if (!conveyor || !trackRect || !Number.isFinite(conveyor.totalLength) || conveyor.totalLength <= 0) {
+      return { top: [], bottom: [], left: [], right: [] };
+    }
+    const key = [
+      Math.round(trackRect.x),
+      Math.round(trackRect.y),
+      Math.round(trackRect.w),
+      Math.round(trackRect.h),
+      Math.round(trackRect.r),
+      Math.round(conveyor.totalLength),
+      Math.round(LAYOUT.fieldX),
+      Math.round(LAYOUT.fieldY),
+      Math.round(LAYOUT.fieldCols * LAYOUT.fieldStep),
+      Math.round(LAYOUT.fieldRows * LAYOUT.fieldStep),
+    ].join(":");
+    if (this.trackSideSamples && this.trackSideSamplesKey === key) {
+      return this.trackSideSamples;
+    }
+
+    const samples = { top: [], bottom: [], left: [], right: [] };
+    const sampleStep = 1;
+    for (let distance = 0; distance < conveyor.totalLength; distance += sampleStep) {
+      const point = conveyor.pointAtDistance(distance);
+      const direction = this.getInwardShootDirection(point);
+      if (!direction?.side || !samples[direction.side]) {
+        continue;
+      }
+      samples[direction.side].push(point);
+    }
+
+    this.trackSideSamples = samples;
+    this.trackSideSamplesKey = key;
+    return samples;
+  }
+
+  hasTrackShotWindowForProbe(target, probe, lineHalfWidth) {
+    if (!target || !probe?.side || !probe.direction) {
+      return false;
+    }
+    const cacheKey = `${this.targetingCacheVersion}:${target.id}:${probe.side}`;
+    if (this.trackProbeWindowCache.has(cacheKey)) {
+      return this.trackProbeWindowCache.get(cacheKey);
+    }
+
+    const sideSamples = this.getTrackSideSamples()[probe.side] || [];
+    for (const samplePoint of sideSamples) {
+      const hit = this.getLineHitForBlock(samplePoint, probe.direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (this.isPathBlockedByPlacedBlocks(
+        samplePoint,
+        probe.direction,
+        hit.forwardDistance,
+        lineHalfWidth * 0.9,
+        target.id
+      )) {
+        continue;
+      }
+      this.trackProbeWindowCache.set(cacheKey, true);
+      return true;
+    }
+
+    this.trackProbeWindowCache.set(cacheKey, false);
+    return false;
+  }
+
   isSideReachableForTargetByTrack(side, targetCenter, lineHalfWidth) {
     const trackRect = this.conveyor?.trackRect;
     if (!trackRect) {
@@ -5574,24 +5786,14 @@ class Game {
     if (!target) {
       return null;
     }
-    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    const lineHalfWidth = this.getShotLineHalfWidth();
     const targetCenter = this.blockCenter(target);
     const probes = this.getOrderedTargetSideProbes(target);
     for (const probe of probes) {
       if (!this.isSideReachableForTargetByTrack(probe.side, targetCenter, lineHalfWidth)) {
         continue;
       }
-      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
-      if (!hit) {
-        continue;
-      }
-      if (this.isPathBlockedByPlacedBlocks(
-        probe.sourcePoint,
-        probe.direction,
-        hit.forwardDistance,
-        lineHalfWidth * 0.9,
-        target.id
-      )) {
+      if (!this.hasTrackShotWindowForProbe(target, probe, lineHalfWidth)) {
         continue;
       }
       return probe;
@@ -5603,7 +5805,11 @@ class Game {
     if (!target) {
       return [];
     }
-    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    const cacheKey = `${this.targetingCacheVersion}:${target.id}`;
+    if (this.allowedReachableProbeCache.has(cacheKey)) {
+      return this.allowedReachableProbeCache.get(cacheKey);
+    }
+    const lineHalfWidth = this.getShotLineHalfWidth();
     const targetCenter = this.blockCenter(target);
     const reachable = [];
     const probes = this.getOrderedTargetSideProbes(target);
@@ -5611,88 +5817,98 @@ class Game {
       if (!this.isSideReachableForTargetByTrack(probe.side, targetCenter, lineHalfWidth)) {
         continue;
       }
-      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
-      if (!hit) {
-        continue;
-      }
-      if (this.isPathBlockedByPlacedBlocks(
-        probe.sourcePoint,
-        probe.direction,
-        hit.forwardDistance,
-        lineHalfWidth * 0.9,
-        target.id
-      )) {
+      if (!this.hasTrackShotWindowForProbe(target, probe, lineHalfWidth)) {
         continue;
       }
       reachable.push(probe);
     }
 
     if (reachable.length === 0) {
+      this.allowedReachableProbeCache.set(cacheKey, []);
       return [];
     }
-
-    const bySide = new Map(reachable.map((probe) => [probe.side, probe]));
-    const primary = reachable[0];
-    const allowed = [primary];
-    const oppositeBySide = {
-      top: "bottom",
-      bottom: "top",
-      left: "right",
-      right: "left",
-    };
-    // If target is not near the border, allow both sides of the same axis.
-    // This prevents slow "one-side-only" firing on large sparse generated boards.
-    const centerThreshold = LAYOUT.cellSize * 2.2;
-    if (primary.distance >= centerThreshold) {
-      const opposite = bySide.get(oppositeBySide[primary.side]);
-      if (opposite) {
-        allowed.push(opposite);
-      }
-    }
-    return allowed;
+    this.allowedReachableProbeCache.set(cacheKey, reachable);
+    return reachable;
   }
 
   getNextSpiralTargetForColor(color) {
-    const target = this.getNextSpiralTarget();
-    if (!target) {
-      return null;
+    const targets = this.getNextSpiralTargets();
+    for (const target of targets) {
+      if (target.color === color) {
+        return target;
+      }
     }
-    return target.color === color ? target : null;
+    return null;
+  }
+
+  canColorShootNextSpiralTargetFromTrack(color) {
+    const conveyor = this.conveyor;
+    if (!conveyor || !Number.isFinite(conveyor.totalLength) || conveyor.totalLength <= 0) {
+      return false;
+    }
+    const sampleStep = Math.max(3, LAYOUT.cellSize * 0.45);
+    const sampleCount = Math.max(1, Math.ceil(conveyor.totalLength / sampleStep));
+    for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      const distance = (sampleIndex / sampleCount) * conveyor.totalLength;
+      const samplePoint = conveyor.pointAtDistance(distance);
+      const direction = this.getInwardShootDirection(samplePoint);
+      if (!direction) {
+        continue;
+      }
+      if (this.findTargetOnLine(samplePoint, color, direction)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   canColorShootNextSpiralTarget(color) {
-    const target = this.getNextSpiralTarget();
-    if (!target || target.color !== color) {
+    const colorTargets = this.getNextSpiralTargets().filter((target) => target.color === color);
+    if (colorTargets.length === 0) {
       return false;
     }
-    return this.getAllowedReachableProbesForTarget(target).length > 0;
+    if (!colorTargets.some((target) => this.getAllowedReachableProbesForTarget(target).length > 0)) {
+      return false;
+    }
+    return this.canColorShootNextSpiralTargetFromTrack(color);
   }
 
   findTargetOnLine(sourcePoint, color, direction) {
-    const lineHalfWidth = LAYOUT.cellSize * 0.65;
-    const target = this.getNextSpiralTarget();
-    if (!target || target.color !== color) {
-      return null;
-    }
-    const allowedProbes = this.getAllowedReachableProbesForTarget(target);
-    if (!allowedProbes.some((probe) => probe.direction.side === direction.side)) {
-      return null;
+    const lineHalfWidth = this.getShotLineHalfWidth();
+    let bestTarget = null;
+    let bestPriority = null;
+
+    for (const target of this.getNextSpiralTargets()) {
+      if (target.color !== color) {
+        continue;
+      }
+      const allowedProbes = this.getAllowedReachableProbesForTarget(target);
+      if (!allowedProbes.some((probe) => probe.direction.side === direction.side)) {
+        continue;
+      }
+
+      const hit = this.getLineHitForBlock(sourcePoint, direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (this.isPathBlockedByPlacedBlocks(
+        sourcePoint,
+        direction,
+        hit.forwardDistance,
+        lineHalfWidth * 0.9,
+        target.id
+      )) {
+        continue;
+      }
+      const priority = this.getSpiralBuildPriority(target, hit.forwardDistance);
+      if (!this.isSpiralBuildPriorityBetter(priority, bestPriority)) {
+        continue;
+      }
+      bestPriority = priority;
+      bestTarget = target;
     }
 
-    const hit = this.getLineHitForBlock(sourcePoint, direction, target, lineHalfWidth);
-    if (!hit) {
-      return null;
-    }
-    if (this.isPathBlockedByPlacedBlocks(
-      sourcePoint,
-      direction,
-      hit.forwardDistance,
-      lineHalfWidth * 0.9,
-      target.id
-    )) {
-      return null;
-    }
-    return target;
+    return bestTarget;
   }
 
   hasTargetForColor(color) {
@@ -5722,14 +5938,15 @@ class Game {
       return;
     }
 
-    const currentTarget = this.getNextSpiralTarget();
-    if (!currentTarget || currentTarget.id !== block.id) {
+    const activeTargets = this.getNextSpiralTargets();
+    if (!activeTargets.some((target) => target.id === block.id)) {
       return;
     }
 
     block.alive = true;
     block.hitFlash = 1;
     this.remainingBlocks -= 1;
+    this.invalidateTargetingCaches();
     this.rebuildBlockFieldLayer();
 
     const center = this.blockCenter(block);
@@ -5955,6 +6172,7 @@ class Game {
       block.alive = true;
       block.hitFlash = 0;
     }
+    this.invalidateTargetingCaches();
     this.rebuildBlockFieldLayer();
     for (const card of this.cards) {
       card.used = true;
@@ -6416,38 +6634,23 @@ class Game {
   }
 
   drawTargetSilhouette(ctx) {
-    const targets = this.getNextSpiralTargets();
+    const targets = this.getContourGhostTargets();
     if (targets.length === 0) {
       return;
     }
 
-    const denom = Math.max(1, targets.length - 1);
     const now = performance.now();
-    const waveDurationMs = 1400;
-    const waveSpan = Math.max(1, targets.length - 1);
-    const waveHead = (((now % waveDurationMs) + waveDurationMs) % waveDurationMs) / waveDurationMs * waveSpan;
-    const waveWidth = 1.25;
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
-      const isNextTarget = index === 0;
-      const toFirstRaw = targets.length <= 1 ? 1 : 1 - index / denom;
-      // Smooth fade: first target = 1, tail target = 0.
-      const toFirstSmooth = toFirstRaw * toFirstRaw * (3 - 2 * toFirstRaw);
-      if (toFirstSmooth <= 0.001) {
-        continue;
-      }
-      const waveDistance = Math.abs(index - waveHead);
-      const wrappedWaveDistance = Math.min(waveDistance, Math.abs(index + targets.length - waveHead));
-      const waveInfluence = Math.exp(-(wrappedWaveDistance * wrappedWaveDistance) / (waveWidth * waveWidth));
-      const waveBoost = 1 + 0.22 * waveInfluence;
       const isBlackTarget = String(target.color || "").toLowerCase() === "black";
       const colorGhostAlphaMul = isBlackTarget ? 1 : 0.58;
+      const pulse = 0.88 + 0.12 * Math.sin(now * 0.005 + index * 0.47);
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const growScale = lerp(0.7, 1.18, toFirstSmooth) * waveBoost;
-      const alphaBase = toFirstSmooth * colorGhostAlphaMul;
-      const glowAlpha = ((0.2 * alphaBase) + (isNextTarget ? 0.08 * colorGhostAlphaMul : 0)) * waveBoost;
-      const glowRadius = target.size * (0.44 + 0.34 * toFirstSmooth) * (1 + 0.15 * waveInfluence);
+      const alphaBase = (0.64 + 0.14 * pulse) * colorGhostAlphaMul;
+      const glowAlpha = (0.18 * alphaBase) * (0.9 + 0.16 * pulse);
+      const glowRadius = target.size * (0.8 + 0.1 * pulse);
+      const growScale = 0.96 + 0.08 * pulse;
 
       ctx.save();
       const glowGradient = ctx.createRadialGradient(
@@ -6477,22 +6680,14 @@ class Game {
       ctx.scale(growScale, growScale);
       ctx.translate(-centerX, -centerY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: ((0.78 * alphaBase) + (isNextTarget ? 0.14 * colorGhostAlphaMul : 0)) * waveBoost,
-        shadowOpacity: 0.08 + 0.14 * toFirstSmooth,
-        bevelStrength: 0.1 + 0.2 * toFirstSmooth,
+        alpha: 0.78 * alphaBase,
+        shadowOpacity: 0.14,
+        bevelStrength: 0.18,
       });
       roundedRect(ctx, target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1, 8);
-      ctx.lineWidth = isNextTarget ? 2.2 : 1.35;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${(((0.52 * alphaBase) + (isNextTarget ? 0.16 : 0)) * waveBoost).toFixed(3)})`;
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.62 * alphaBase).toFixed(3)})`;
       ctx.stroke();
-      if (isNextTarget) {
-        const markerSize = Math.max(3, target.size * 0.14);
-        const markerX = target.x + target.size - markerSize - 3;
-        const markerY = target.y + 3;
-        ctx.fillStyle = `rgba(255, 255, 255, ${(0.66 * colorGhostAlphaMul).toFixed(3)})`;
-        roundedRect(ctx, markerX, markerY, markerSize, markerSize, Math.max(2, markerSize * 0.35));
-        ctx.fill();
-      }
       ctx.restore();
     }
   }
@@ -7626,7 +7821,7 @@ class Game {
     }
     const tutorialAnimating = this.tutorial?.active && this.getTutorialTapTarget() !== null;
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
-    const targetPulseAnimating = this.gameState === "playing" && this.getNextSpiralTargets().length > 0;
+    const targetPulseAnimating = this.gameState === "playing" && this.getContourGhostTargets().length > 0;
     const cardsAnimating = this.hasAnimatingCards();
     const zoomAnimating = Math.abs(this.cameraZoomTarget - this.cameraZoom) > 0.001;
     if (
