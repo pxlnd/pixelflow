@@ -3473,10 +3473,9 @@ class Game {
     LAYOUT.fieldStep = Math.max(12, Math.round(BASE_LAYOUT.fieldStep * trackScale * runtimeDebugImageScale));
     LAYOUT.cellSize = Math.max(10, Math.round(BASE_LAYOUT.cellSize * trackScale * runtimeDebugImageScale));
     const fieldCenterX = LAYOUT.track.x + LAYOUT.track.w * 0.5;
-    const levelFieldOffsetY = clampDebugImageOffsetY(CURRENT_LEVEL?.pixelArt?.offsetY ?? 0);
     const runtimeDebugImageOffsetY = this.getDebugImageOffsetY();
     const fieldCenterY =
-      LAYOUT.track.y + LAYOUT.track.h * 0.5 - LAYOUT.track.h * FIELD_CENTERING_UP_RATIO + levelFieldOffsetY + runtimeDebugImageOffsetY;
+      LAYOUT.track.y + LAYOUT.track.h * 0.5 - LAYOUT.track.h * FIELD_CENTERING_UP_RATIO + runtimeDebugImageOffsetY;
     const fieldW = LAYOUT.fieldCols * LAYOUT.fieldStep;
     const fieldH = LAYOUT.fieldRows * LAYOUT.fieldStep;
     LAYOUT.fieldX = Math.round(fieldCenterX - fieldW * 0.5);
@@ -3934,11 +3933,11 @@ class Game {
     if (this.debugSaveTargetDirty && !force) {
       return;
     }
-    const effectiveId =
-      String(preferredLevelId || "") === DEBUG_IMAGE_LEVEL_ID
-        ? this.debugGeneratedBaseLevelId
-        : preferredLevelId;
-    const numericId = isPositiveIntegerString(effectiveId) ? Number(effectiveId) : this.getSuggestedExportLevelNumber();
+    const isDebugGeneratedLevel = String(preferredLevelId || "") === DEBUG_IMAGE_LEVEL_ID;
+    const effectiveId = isDebugGeneratedLevel ? this.debugGeneratedBaseLevelId : preferredLevelId;
+    const numericId = isDebugGeneratedLevel
+      ? this.getSuggestedExportLevelNumber()
+      : (isPositiveIntegerString(effectiveId) ? Number(effectiveId) : this.getSuggestedExportLevelNumber());
     if (this.debugSaveLevelNumberInput) {
       this.debugSaveLevelNumberInput.value = String(numericId);
     }
@@ -4041,7 +4040,26 @@ class Game {
     }
   }
 
-  async saveCurrentLevelPayload(payload, { triggerButton = null, requireFolderWrite = true } = {}) {
+  async doesLevelFileExistInPickedFolder(levelNumber) {
+    if (!this.debugLevelsDirHandle) {
+      return false;
+    }
+    try {
+      await this.debugLevelsDirHandle.getFileHandle(`${levelNumber}.json`, { create: false });
+      return true;
+    } catch (error) {
+      if (error && typeof error === "object" && String(error.name || "") === "NotFoundError") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async saveCurrentLevelPayload(payload, {
+    triggerButton = null,
+    requireFolderWrite = true,
+    confirmOverwrite = false,
+  } = {}) {
     let writtenToFolder = false;
     if (requireFolderWrite) {
       if (!this.debugLevelsDirHandle) {
@@ -4049,6 +4067,26 @@ class Game {
         if (!picked) {
           this.setDebugImageStatus("Сохранение отменено: папка уровней не выбрана.", "error");
           return false;
+        }
+      }
+      if (confirmOverwrite) {
+        let fileExists = false;
+        try {
+          fileExists = await this.doesLevelFileExistInPickedFolder(payload.levelNumber);
+        } catch {
+          this.setDebugImageStatus("Не удалось проверить существование файла в папке уровней.", "error");
+          return false;
+        }
+        if (fileExists) {
+          const confirmed = typeof window.confirm === "function"
+            ? window.confirm(
+              `Файл ${payload.levelNumber}.json уже существует в папке '${this.debugLevelsDirName || "levels"}'. Перезаписать его?`
+            )
+            : true;
+          if (!confirmed) {
+            this.setDebugImageStatus("Сохранение отменено: существующий файл не перезаписан.", "info");
+            return false;
+          }
         }
       }
       writtenToFolder = await this.writeLevelPayloadToPickedFolder(payload);
@@ -4111,6 +4149,7 @@ class Game {
     await this.saveCurrentLevelPayload(payload, {
       triggerButton: this.debugSaveCurrentLevelButton,
       requireFolderWrite: true,
+      confirmOverwrite: false,
     });
   }
 
@@ -4121,6 +4160,7 @@ class Game {
     await this.saveCurrentLevelPayload(payload, {
       triggerButton: this.debugSaveTargetLevelButton || this.debugExportLevelButton,
       requireFolderWrite: true,
+      confirmOverwrite: true,
     });
   }
 
@@ -7357,9 +7397,13 @@ class Game {
   getDebugImageSettingsForLevel(levelId = this.currentLevelId) {
     const key = this.getDebugImageSettingsLevelId(levelId);
     const raw = this.debugImageSettingsByLevel?.[key];
+    const currentKey = this.getDebugImageSettingsLevelId(this.currentLevelId);
+    const levelConfig = key === currentKey ? CURRENT_LEVEL : LEVEL_MAP.get(String(key));
+    const fallbackScale = clampDebugImageScale(levelConfig?.pixelArt?.artScale ?? 1);
+    const fallbackOffsetY = clampDebugImageOffsetY(levelConfig?.pixelArt?.offsetY ?? DEBUG_IMAGE_OFFSET_Y_DEFAULT);
     return {
-      imageScale: clampDebugImageScale(raw?.imageScale ?? 1),
-      offsetY: clampDebugImageOffsetY(raw?.offsetY ?? DEBUG_IMAGE_OFFSET_Y_DEFAULT),
+      imageScale: clampDebugImageScale(raw?.imageScale ?? fallbackScale),
+      offsetY: clampDebugImageOffsetY(raw?.offsetY ?? fallbackOffsetY),
     };
   }
 
