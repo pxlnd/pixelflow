@@ -302,6 +302,18 @@ const CARD_HITBOX_PADDING_X = 26;
 const CARD_HITBOX_PADDING_TOP = 26;
 const CARD_HITBOX_PADDING_BOTTOM = 22;
 const PARKED_UNIT_TAP_RADIUS = 86;
+const LEVEL_ONE_TUTORIAL_ID = "1";
+const LEVEL_ONE_TUTORIAL_STEPS = {
+  tapBlackCard: "tap-black-card",
+  waitBlackParked: "wait-black-parked",
+  tapGreenCard: "tap-green-card",
+  waitGreenParked: "wait-green-parked",
+  tapBlackParked: "tap-black-parked",
+  done: "done",
+};
+const QUEUE_CARDS_RAISE_RATIO = 0.3;
+const SLOT_SIZE_REDUCTION_RATIO = 0.2;
+const SLOT_BIRD_FORWARD_SHIFT_RATIO = 0.2;
 const SHOW_TAP_DEBUG = false;
 const SPAWN_CLEAR_RADIUS = 118;
 const SLOT_CLAIM_ORDER = [0, 3, 1, 2];
@@ -390,6 +402,7 @@ const LOSE_POPUP_UI = {
   innerPadding: 18,
   closeSize: 40,
 };
+const LOSE_POPUP_BIRDS_DROP_RATIO = 0.15;
 const BASE_TOP_UI = {
   timerY: TIMER_PANEL_UI.y,
   timerW: TIMER_PANEL_UI.w,
@@ -1406,6 +1419,7 @@ class Unit {
         this.prevPosition = { ...this.position };
         this.parkBounce = 1;
         game.triggerParkedUnitFx(this);
+        game.onTutorialUnitParked(this);
       }
     } else {
       this.cooldown = Math.max(0, this.cooldown - dt);
@@ -1975,6 +1989,9 @@ class Game {
     this.backdropImage = new Image();
     this.backdropImage.src = "ui/bg.jpg";
     this.backdropImage.decoding = "sync";
+    this.tutorHandImage = new Image();
+    this.tutorHandImage.src = "ui/tutor_hand.png";
+    this.tutorHandImage.decoding = "sync";
     this.blockTemplateImage = new Image();
     this.blockTemplateImage.src = "ui/block.png";
     this.blockTemplateImage.decoding = "sync";
@@ -2038,6 +2055,7 @@ class Game {
       color: null,
       moving: false,
     };
+    this.tutorial = this.createTutorialState();
 
     this.gameState = "loading";
     this.remainingBlocks = 0;
@@ -3210,7 +3228,9 @@ class Game {
     this.floatTexts = [];
     this.confetti = [];
     this.cards = this.cardManager.resetFromBlocks(this.blocks);
+    this.enforceLevelOneTutorialQueue();
     this.slotManager.reset();
+    this.setupLevelOneTutorial();
     this.setWagonIdle();
     this.cameraZoom = 1;
     this.cameraZoomTarget = 1;
@@ -3476,13 +3496,16 @@ class Game {
       }
       const w = Math.max(90, Math.round(baseSlot.w * SLOT_SIZE_SCALE));
       const h = Math.max(72, Math.round(baseSlot.h * SLOT_SIZE_SCALE));
+      const reducedW = Math.max(72, Math.round(w * (1 - SLOT_SIZE_REDUCTION_RATIO)));
+      const reducedH = Math.max(58, Math.round(h * (1 - SLOT_SIZE_REDUCTION_RATIO)));
       const baseCenterX = baseSlot.x + baseSlot.w * 0.5;
       const centerX = fieldCenterX + (baseCenterX - fieldCenterX) * effectiveSlotSpacingX;
       const centerY = baseSlot.y + baseSlot.h * 0.5 + effectiveSlotYOffset;
-      slot.w = w;
-      slot.h = h;
-      slot.x = Math.round(centerX - w * 0.5);
-      slot.y = Math.round(centerY - h * 0.5);
+      const keepTopAnchorShiftY = Math.round((h - reducedH) * 0.5);
+      slot.w = reducedW;
+      slot.h = reducedH;
+      slot.x = Math.round(centerX - reducedW * 0.5);
+      slot.y = Math.round(centerY - reducedH * 0.5 - keepTopAnchorShiftY);
     }
 
     const dynamicCardLayouts = layoutAnchor.cards.map((baseCard, index) => ({
@@ -3582,6 +3605,13 @@ class Game {
       }
       for (const card of dynamicCardLayouts) {
         card.y += anchorShiftY;
+      }
+    }
+
+    if (dynamicCardLayouts.length > 0 && QUEUE_CARDS_RAISE_RATIO > 0) {
+      const raisePx = Math.round(Math.max(1, dynamicCardLayouts[0].h) * QUEUE_CARDS_RAISE_RATIO);
+      for (const card of dynamicCardLayouts) {
+        card.y -= raisePx;
       }
     }
 
@@ -4194,6 +4224,224 @@ class Game {
     return this.cardManager.getCardPigCenter(card);
   }
 
+  createTutorialState() {
+    return {
+      active: false,
+      step: LEVEL_ONE_TUTORIAL_STEPS.done,
+      handTime: 0,
+      firstBlackUnitId: null,
+      greenUnitId: null,
+    };
+  }
+
+  isLevelOneTutorialEnabled() {
+    return String(this.currentLevelId || "") === LEVEL_ONE_TUTORIAL_ID;
+  }
+
+  swapCardPayload(cardA, cardB) {
+    if (!cardA || !cardB || cardA === cardB) {
+      return;
+    }
+    const payloadA = {
+      color: cardA.color,
+      styleKey: cardA.styleKey,
+      ammo: cardA.ammo,
+    };
+    cardA.color = cardB.color;
+    cardA.styleKey = cardB.styleKey;
+    cardA.ammo = cardB.ammo;
+    cardA.used = cardA.ammo <= 0;
+    cardB.color = payloadA.color;
+    cardB.styleKey = payloadA.styleKey;
+    cardB.ammo = payloadA.ammo;
+    cardB.used = cardB.ammo <= 0;
+  }
+
+  enforceLevelOneTutorialQueue() {
+    if (!this.isLevelOneTutorialEnabled()) {
+      return;
+    }
+    const rightFront = this.getActiveFrontCardInLane(1);
+    const leftFront = this.getActiveFrontCardInLane(0);
+    if (rightFront && rightFront.color !== "black") {
+      const donor = this.cards.find((card) => !card.used && card.color === "black" && card.index !== rightFront.index);
+      if (donor) {
+        this.swapCardPayload(rightFront, donor);
+      }
+    }
+    if (leftFront && leftFront.color !== "green") {
+      const donor = this.cards.find((card) => !card.used && card.color === "green" && card.index !== leftFront.index);
+      if (donor) {
+        this.swapCardPayload(leftFront, donor);
+      }
+    }
+    this.cards = this.normalizeShooterQueues(this.cards);
+  }
+
+  setupLevelOneTutorial() {
+    this.tutorial = this.createTutorialState();
+    if (!this.isLevelOneTutorialEnabled()) {
+      return;
+    }
+    this.tutorial.active = true;
+    this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.tapBlackCard;
+  }
+
+  finishTutorial() {
+    this.tutorial.active = false;
+    this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.done;
+  }
+
+  getTutorialTargetCard(color) {
+    if (!this.tutorial?.active) {
+      return null;
+    }
+    if (color === "black") {
+      const rightFront = this.getActiveFrontCardInLane(1);
+      if (rightFront && rightFront.color === "black") {
+        return rightFront;
+      }
+    }
+    if (color === "green") {
+      const leftFront = this.getActiveFrontCardInLane(0);
+      if (leftFront && leftFront.color === "green") {
+        return leftFront;
+      }
+    }
+    return this.cards.find((card) => this.isFrontRowCard(card) && card.color === color) || null;
+  }
+
+  getTutorialTargetBlackParkedUnit() {
+    if (!this.tutorial?.active) {
+      return null;
+    }
+    const firstUnitId = this.tutorial.firstBlackUnitId;
+    if (Number.isFinite(firstUnitId)) {
+      const unit = this.units.find(
+        (item) => item.id === firstUnitId && item.alive && item.state === "parked" && item.color === "black" && item.ammo > 0
+      );
+      if (unit) {
+        return unit;
+      }
+    }
+    return this.units.find((unit) => unit.alive && unit.state === "parked" && unit.color === "black" && unit.ammo > 0) || null;
+  }
+
+  getTutorialTapTarget() {
+    if (!this.tutorial?.active || this.gameState !== "playing") {
+      return null;
+    }
+    const step = this.tutorial.step;
+    if (step === LEVEL_ONE_TUTORIAL_STEPS.tapBlackCard) {
+      const card = this.getTutorialTargetCard("black");
+      return card ? { type: "card", card } : null;
+    }
+    if (step === LEVEL_ONE_TUTORIAL_STEPS.tapGreenCard) {
+      const card = this.getTutorialTargetCard("green");
+      return card ? { type: "card", card } : null;
+    }
+    if (step === LEVEL_ONE_TUTORIAL_STEPS.tapBlackParked) {
+      const unit = this.getTutorialTargetBlackParkedUnit();
+      return unit ? { type: "parkedUnit", unit } : null;
+    }
+    return null;
+  }
+
+  isPointOnTutorialTarget(target, x, y) {
+    if (!target) {
+      return false;
+    }
+    if (target.type === "card") {
+      return this.cardManager.isPointOnCard(target.card, x, y, {
+        visualLiftY: this.getQueueVisualLiftY(),
+      });
+    }
+    if (target.type === "parkedUnit") {
+      return Math.hypot(x - target.unit.position.x, y - target.unit.position.y) <= PARKED_UNIT_TAP_RADIUS;
+    }
+    return false;
+  }
+
+  onTutorialUnitParked(unit) {
+    if (!this.tutorial?.active || !unit) {
+      return;
+    }
+    if (this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.waitBlackParked && unit.color === "black") {
+      this.tutorial.firstBlackUnitId = unit.id;
+      this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.tapGreenCard;
+      this.invalidate(true);
+      return;
+    }
+    if (this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.waitGreenParked && unit.color === "green") {
+      this.tutorial.greenUnitId = unit.id;
+      this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.tapBlackParked;
+      this.invalidate(true);
+    }
+  }
+
+  updateTutorialState(dt) {
+    if (!this.tutorial?.active) {
+      return;
+    }
+    this.tutorial.handTime += dt;
+    if (this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.tapBlackParked && !this.getTutorialTargetBlackParkedUnit()) {
+      this.finishTutorial();
+      this.invalidate(true);
+    }
+  }
+
+  drawTutorialHand(ctx) {
+    if (!this.tutorial?.active) {
+      return;
+    }
+    const target = this.getTutorialTapTarget();
+    if (!target) {
+      return;
+    }
+    const hand = this.tutorHandImage;
+    if (!hand || !hand.complete || hand.naturalWidth <= 0 || hand.naturalHeight <= 0) {
+      return;
+    }
+
+    let targetX = 0;
+    let targetY = 0;
+    if (target.type === "card") {
+      const center = this.getCardPigCenter(target.card);
+      targetX = center.x;
+      targetY = center.y - this.getQueueVisualLiftY();
+    } else if (target.type === "parkedUnit") {
+      targetX = target.unit.position.x;
+      targetY = target.unit.position.y;
+    }
+
+    const floatX = Math.sin(this.tutorial.handTime * 6.2) * 10;
+    const pulse = 0.84 + 0.16 * Math.sin(this.tutorial.handTime * 7.5);
+    const ringR = target.type === "card" ? 58 : 52;
+    const handW = 157;
+    const handH = handW * (hand.naturalHeight / hand.naturalWidth);
+    const handX = targetX + 74 + floatX;
+    const handY = targetY;
+
+    ctx.save();
+    ctx.globalAlpha = 0.6 + pulse * 0.35;
+    ctx.strokeStyle = "rgba(255, 247, 210, 0.96)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(targetX, targetY, ringR * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    if ("imageSmoothingQuality" in ctx) {
+      ctx.imageSmoothingQuality = "high";
+    }
+    ctx.translate(handX, handY);
+    ctx.rotate(-Math.PI * 0.5 + Math.PI / 6);
+    ctx.drawImage(hand, -handW * 0.5, -handH * 0.5, handW, handH);
+    ctx.restore();
+  }
+
   getCellColor(col, row) {
     const matrix = CURRENT_LEVEL?.pixelArt?.colorMatrix;
     if (Array.isArray(matrix)) {
@@ -4255,6 +4503,15 @@ class Game {
     );
     this.units.push(unit);
     card.used = true;
+    if (this.tutorial?.active) {
+      if (this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.tapBlackCard && card.color === "black") {
+        this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.waitBlackParked;
+        this.tutorial.firstBlackUnitId = unit.id;
+      } else if (this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.tapGreenCard && card.color === "green") {
+        this.tutorial.step = LEVEL_ONE_TUTORIAL_STEPS.waitGreenParked;
+        this.tutorial.greenUnitId = unit.id;
+      }
+    }
     this.invalidate(true);
     return true;
   }
@@ -4304,6 +4561,9 @@ class Game {
     unit.parkBounce = 0;
     unit.renderRotation = null;
     unit.prevPosition = { ...unit.position };
+    if (this.tutorial?.active && this.tutorial.step === LEVEL_ONE_TUTORIAL_STEPS.tapBlackParked && unit.color === "black") {
+      this.finishTutorial();
+    }
     this.invalidate(true);
     return true;
   }
@@ -4369,9 +4629,11 @@ class Game {
     if (!center) {
       return null;
     }
+    const slot = LAYOUT.slots[slotIndex];
+    const forwardShift = slot ? Math.round(slot.h * SLOT_BIRD_FORWARD_SHIFT_RATIO) : 0;
     return {
       x: center.x,
-      y: center.y - this.getSlotVisualLiftY(),
+      y: center.y - this.getSlotVisualLiftY() - forwardShift,
     };
   }
 
@@ -4773,8 +5035,8 @@ class Game {
     this.blockWaves.push({
       x,
       y,
-      life: 0.42,
-      maxLife: 0.42,
+      life: 0.34,
+      maxLife: 0.34,
       startR: 8,
       endR: 300,
       bandWidth: 34,
@@ -4783,8 +5045,8 @@ class Game {
     this.blockWaves.push({
       x,
       y,
-      life: 0.34,
-      maxLife: 0.34,
+      life: 0.28,
+      maxLife: 0.28,
       startR: 24,
       endR: 340,
       bandWidth: 46,
@@ -5121,6 +5383,7 @@ class Game {
       this.startVictorySequence();
     }
 
+    this.updateTutorialState(dt);
     this.updateConfetti(dt);
     this.cameraZoom += (this.cameraZoomTarget - this.cameraZoom) * Math.min(1, dt * VICTORY_ZOOM_SPEED);
   }
@@ -6101,8 +6364,7 @@ class Game {
     w *= fitScale;
     h *= fitScale;
     const centeredY = (this.height - h) * 0.5;
-    const loweredY = centeredY + this.height * 0.2;
-    const y = clamp(loweredY, 20, this.height - h - 20);
+    const y = clamp(centeredY, 20, this.height - h - 20);
     return {
       x: (this.width - w) * 0.5,
       y,
@@ -6154,7 +6416,7 @@ class Game {
       ctx.imageSmoothingQuality = "high";
     }
     const x = popupX + 128 * sx;
-    const y = popupY + 244 * sy;
+    const y = popupY + 244 * sy * (1 - LOSE_POPUP_BIRDS_DROP_RATIO);
     const w = 390 * sx;
     const h = 158 * sy;
     ctx.drawImage(this.losePopupBirdsImage, x, y, w, h);
@@ -6563,6 +6825,7 @@ class Game {
     this.drawTopTimerPanel(ctx);
     this.drawTopCoinsPanel(ctx);
     this.drawBackButton(ctx);
+    this.drawTutorialHand(ctx);
     this.drawLevelStartFade(ctx);
     if (this.gameState === "lose") {
       this.drawLosePopup(ctx);
@@ -6599,6 +6862,7 @@ class Game {
     if (this.gameState === "lose") {
       return this.losePopupAppear < 0.999 || this.levelStartFade > 0.001 || this.hasAnimatingCards();
     }
+    const tutorialAnimating = this.tutorial?.active && this.getTutorialTapTarget() !== null;
     const hasActiveUnits = this.units.some((unit) => unit.alive && unit.state !== "parked");
     const targetPulseAnimating = this.gameState === "playing" && this.getNextSpiralTargets().length > 0;
     const cardsAnimating = this.hasAnimatingCards();
@@ -6616,6 +6880,7 @@ class Game {
       this.confetti.length > 0 ||
       this.victoryConfettiTime > 0 ||
       this.levelStartFade > 0.001 ||
+      tutorialAnimating ||
       zoomAnimating
     ) {
       return true;
@@ -6661,6 +6926,11 @@ class Game {
       this.invalidate(false);
       return;
     }
+    if (this.gameState === "playing" && this.tutorial?.active) {
+      const target = this.getTutorialTapTarget();
+      this.canvas.style.cursor = target && this.isPointOnTutorialTarget(target, x, y) ? "pointer" : "default";
+      return;
+    }
     if (this.gameState === "lose") {
       const overClose = isInsideRect(x, y, this.loseCloseRect);
       const overContinue = isInsideRect(x, y, this.loseContinueRect);
@@ -6676,6 +6946,20 @@ class Game {
     if (this.debugPaintModeEnabled) {
       if (this.applyDebugPaintAt(x, y)) {
         this.invalidate(false);
+      }
+      return;
+    }
+    if (this.gameState === "playing" && this.tutorial?.active) {
+      const target = this.getTutorialTapTarget();
+      if (!target || !this.isPointOnTutorialTarget(target, x, y)) {
+        return;
+      }
+      if (target.type === "card") {
+        this.spawnUnit(target.card.index);
+        return;
+      }
+      if (target.type === "parkedUnit") {
+        this.relaunchParkedUnit(target.unit);
       }
       return;
     }
