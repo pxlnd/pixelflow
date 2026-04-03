@@ -263,6 +263,8 @@ const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
 const MAX_ACTIVE_UNITS = 5;
 const FIRE_INTERVAL = 0.02;
+const MAX_BURST_SHOTS_PER_TICK = 24;
+const MAX_SPIRAL_GHOST_LOOKAHEAD_COUNT = 15;
 const BULLET_RADIUS = 8;
 const SHOT_TRAIL_DURATION = 0.16;
 const SHOT_BOUNCE_DURATION = 0.16;
@@ -1562,15 +1564,25 @@ class Unit {
       }
 
       const shootDirection = game.getInwardShootDirection(this.position);
-      const target = shootDirection ? game.findTargetOnLine(this.position, this.color, shootDirection) : null;
-      if (!target) {
+      if (!shootDirection) {
         return;
       }
 
-      this.cooldown = FIRE_INTERVAL;
-      this.ammo -= 1;
-      game.fireProjectile(this, target);
-      this.triggerShotBounce();
+      let shotsFired = 0;
+      while (this.ammo > 0 && shotsFired < MAX_BURST_SHOTS_PER_TICK) {
+        const target = game.findTargetOnLine(this.position, this.color, shootDirection);
+        if (!target) {
+          break;
+        }
+        this.ammo -= 1;
+        game.fireProjectile(this, target);
+        shotsFired += 1;
+      }
+
+      if (shotsFired > 0) {
+        this.cooldown = FIRE_INTERVAL;
+        this.triggerShotBounce();
+      }
     }
 
     this.scaleX = 1;
@@ -5323,50 +5335,20 @@ class Game {
   }
 
   getNextSpiralTargets() {
-    const firstPending = this.getFirstPendingSpiralBlock();
-    if (!firstPending) {
-      return [];
-    }
-    const currentRing = firstPending.spiralIndex;
-    const ringBlocks = this.blocksBySpiral
-      .filter((block) => block.spiralIndex === currentRing)
-      .sort((a, b) => a.spiralOrder - b.spiralOrder);
-    if (ringBlocks.length === 0) {
-      return [];
-    }
-
-    const firstPendingIndex = ringBlocks.findIndex((block) => !block.alive);
-    if (firstPendingIndex < 0) {
-      return [];
-    }
-
-    if (!ringBlocks.some((block) => block.alive)) {
-      return ringBlocks.filter((block) => !block.alive);
-    }
-
-    const total = ringBlocks.length;
-    let stopIndex = -1;
-    for (let back = 1; back <= total; back += 1) {
-      const idx = (firstPendingIndex - back + total) % total;
-      if (ringBlocks[idx].alive) {
-        stopIndex = idx;
-        break;
-      }
-    }
-    if (stopIndex < 0) {
-      return ringBlocks.filter((block) => !block.alive);
-    }
-
+    const totalBlocks = this.blocksBySpiral.length;
+    const filledBlocks = Math.max(0, totalBlocks - this.remainingBlocks);
+    const dynamicLookahead = clamp(filledBlocks + 1, 1, MAX_SPIRAL_GHOST_LOOKAHEAD_COUNT);
     const targets = [];
-    for (let offset = 1; offset <= total; offset += 1) {
-      const idx = (stopIndex + offset) % total;
-      const block = ringBlocks[idx];
+    for (const block of this.blocksBySpiral) {
       if (block.alive) {
-        break;
+        continue;
       }
       targets.push(block);
+      if (targets.length >= dynamicLookahead) {
+        break;
+      }
     }
-    return targets.length ? targets : ringBlocks.filter((block) => !block.alive);
+    return targets;
   }
 
   getFirstPendingSpiralBlock() {
@@ -6185,44 +6167,94 @@ class Game {
     const now = performance.now();
     const waveDurationMs = 1500;
     const maxWaveIndex = Math.max(1, targets.length - 1);
-    const wavePhase = ((now % waveDurationMs) + waveDurationMs) % waveDurationMs / waveDurationMs;
-    const waveHead = wavePhase * maxWaveIndex;
-    const waveWidth = 0.42;
+    const headWidth = 0.32;
+    const trailReach = 2.15;
+    const staggerMs = 26;
+
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
-      const distanceFromWave = Math.abs(index - waveHead);
-      const pulseSpike = Math.exp(-(distanceFromWave * distanceFromWave) / Math.max(0.01, waveWidth));
-      const pulse = clamp(0.08 + 0.92 * pulseSpike, 0, 1);
+      const localPhase = ((((now - index * staggerMs) % waveDurationMs) + waveDurationMs) % waveDurationMs) / waveDurationMs;
+      const localWaveHead = localPhase * maxWaveIndex;
+      const rawDistance = index - localWaveHead;
+      const distanceFromWave = Math.abs(rawDistance);
+      const headSpike = Math.exp(-(distanceFromWave * distanceFromWave) / Math.max(0.01, headWidth));
+      // Forward-only trail: highlight 1-2 next blocks after the wave head.
+      let forwardDistance = rawDistance;
+      if (forwardDistance < 0) {
+        forwardDistance += targets.length;
+      }
+      const trailT = clamp(1 - forwardDistance / trailReach, 0, 1);
+      const trail = trailT * trailT;
+      const pulse = clamp(0.05 + 0.76 * headSpike + 0.36 * trail, 0, 1);
+      const depthT = targets.length <= 1 ? 0 : index / (targets.length - 1);
+      const depthCurve = depthT * depthT;
+      const depthFade = lerp(1, 0.12, depthCurve);
+      const isNextTarget = index === 0;
+      const sample = this.getColorSampleForColorKey(target.color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
+      const luminance = clamp((0.2126 * sample.r + 0.7152 * sample.g + 0.0722 * sample.b) / 255, 0, 1);
+      const brightBias = clamp((luminance - 0.52) * 1.35, 0, 0.55);
+      const darkBias = clamp((0.46 - luminance) * 1.45, 0, 0.62);
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const pulseScale = 1 + 0.12 * pulse;
+      const pulseScale = 1 + (isNextTarget ? 0.24 : 0.18) * pulse * depthFade;
+      const glowAlpha = (0.06 + 0.3 * pulse) * depthFade * (isNextTarget ? 1.08 : 1) * (1 - brightBias * 0.45 + darkBias * 0.2);
+      const glowRadius = target.size * (0.5 + 0.2 * pulse);
+
+      ctx.save();
+      const glowGradient = ctx.createRadialGradient(
+        centerX,
+        centerY + target.size * 0.18,
+        0,
+        centerX,
+        centerY + target.size * 0.18,
+        glowRadius
+      );
+      glowGradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha})`);
+      glowGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = glowGradient;
+      roundedRect(
+        ctx,
+        target.x - target.size * 0.16,
+        target.y + target.size * 0.18,
+        target.size * 1.32,
+        target.size * 1.04,
+        Math.max(8, target.size * 0.32)
+      );
+      ctx.fill();
+      ctx.restore();
 
       ctx.save();
       ctx.translate(centerX, centerY);
       ctx.scale(pulseScale, pulseScale);
       ctx.translate(-centerX, -centerY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: 0.9 + 0.1 * pulse,
-        shadowOpacity: 0.24 + 0.06 * pulse,
-        bevelStrength: 0.24 + 0.06 * pulse,
+        alpha: (0.52 + 0.16 * pulse) * depthFade + (isNextTarget ? 0.14 : 0.05),
+        shadowOpacity: (0.14 + 0.07 * pulse) * depthFade,
+        bevelStrength: (0.15 + 0.07 * pulse) * depthFade + (isNextTarget ? 0.04 : 0),
       });
-
-      // Wave-like white gloss sweep over each target block.
-      ctx.save();
       roundedRect(ctx, target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1, 8);
+      ctx.save();
       ctx.clip();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(-Math.PI * 0.22);
-      const sheenW = Math.max(6, target.size * (0.26 + pulse * 0.12));
-      const sheenH = target.size * 1.8;
-      const sheenGradient = ctx.createLinearGradient(-sheenW * 0.5, 0, sheenW * 0.5, 0);
-      sheenGradient.addColorStop(0, "rgba(255, 255, 255, 0)");
-      sheenGradient.addColorStop(0.5, "rgba(255, 255, 255, 0.95)");
-      sheenGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.globalAlpha = 0.06 + 0.82 * pulse;
-      ctx.fillStyle = sheenGradient;
-      ctx.fillRect(-sheenW * 0.5, -sheenH * 0.5, sheenW, sheenH);
+      if (darkBias > 0.001) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${(0.04 + darkBias * 0.28).toFixed(3)})`;
+        ctx.fillRect(target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1);
+      }
+      if (brightBias > 0.001) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${(0.02 + brightBias * 0.22).toFixed(3)})`;
+        ctx.fillRect(target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1);
+      }
       ctx.restore();
+      ctx.lineWidth = (isNextTarget ? 2.4 : 1.5) + 1.1 * pulse;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${((isNextTarget ? 0.38 : 0.16) + 0.46 * pulse * depthFade).toFixed(3)})`;
+      ctx.stroke();
+      if (isNextTarget) {
+        const markerSize = Math.max(3, target.size * 0.12 + pulse * 1.8);
+        const markerX = target.x + target.size - markerSize - 3;
+        const markerY = target.y + 3;
+        ctx.fillStyle = `rgba(255, 255, 255, ${(0.48 + 0.42 * pulse).toFixed(3)})`;
+        roundedRect(ctx, markerX, markerY, markerSize, markerSize, Math.max(2, markerSize * 0.35));
+        ctx.fill();
+      }
       ctx.restore();
     }
   }
