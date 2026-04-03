@@ -1,5 +1,15 @@
 Original prompt: Твоя задача: создать полностью рабочий мини-клон мобильной 2D puzzle-game по приложенному референс-скриншоту. Нужен один локально запускаемый HTML/CSS/JS vertical slice с уровнем, конвейером, автоатакой, победой и restart.
 
+- 2026-04-03: fixed rail-shot reachability regression for stacked targets in `main.js`.
+- Root cause: `getInwardShootDirection()` and `hasTargetForColor()` only considered the bottom lane. After the first placed block, the next spiral target could become unreachable from bottom even though it was still reachable from top/left/right, so later birds made a full lap and parked.
+- Fix: inward shooting now resolves from the nearest aligned side of the field, and `canColorShootNextSpiralTarget()` probes all four inward lanes before deciding a color has no valid target.
+- 2026-04-03: refined the above fix after visual regression report. Corner targets were being shot too early from the side rail. Added preferred-side ordering per target position (`top`, `bottom`, `left`, `right` with top/bottom tie priority) and real shots are now allowed only from the first reachable preferred side.
+- 2026-04-03: ghost visibility tuning per user feedback. In `drawTargetSilhouette()` non-black target tiles now use a stronger alpha multiplier (`0.58`) for fill/glow/outline so colored ghost blocks are noticeably more transparent and closer to black ghost contrast.
+- 2026-04-03: fixed “units loop forever without shooting” regression after side-priority targeting.
+- Root cause: preferred side could be chosen from abstract field probes even when that side was not physically reachable by the rounded rail path.
+- Fix: `getPreferredReachableProbeForTarget()` now filters probes through `isSideReachableForTargetByTrack()` (track straight-segment reach check with rail radius), enabling fallback to the next valid side instead of deadlocking shots.
+- Verification: `output/web-game/loop-no-shot-fix/state-summary.json` shows shots resumed (`remainingBlocks 400 -> 392`, ammo drops on active units).
+
 - Создан чистый статический прототип на `index.html`, `style.css`, `main.js`.
 - Визуал и UI собраны в одном `canvas` для близкой к референсу композиции.
 - Реализованы: блоки, конвейер, слоты, карточки шутеров, спавн по одному тапу, движение, автоатака, победа, restart.

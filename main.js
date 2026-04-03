@@ -5249,44 +5249,28 @@ class Game {
     const left = LAYOUT.fieldX;
     const right = left + fieldWidth;
     const top = LAYOUT.fieldY;
-    const bottom = top + fieldHeight;
+    const bottom = LAYOUT.fieldY + fieldHeight;
     const laneTolerance = LAYOUT.cellSize * 0.65;
     const alignedX = sourcePoint.x >= left - laneTolerance && sourcePoint.x <= right + laneTolerance;
     const alignedY = sourcePoint.y >= top - laneTolerance && sourcePoint.y <= bottom + laneTolerance;
-
-    if (sourcePoint.y < top && alignedX) {
-      return { x: 0, y: 1, side: "top" };
-    }
-    if (sourcePoint.y > bottom && alignedX) {
-      return { x: 0, y: -1, side: "bottom" };
-    }
-    if (sourcePoint.x < left && alignedY) {
-      return { x: 1, y: 0, side: "left" };
-    }
-    if (sourcePoint.x > right && alignedY) {
-      return { x: -1, y: 0, side: "right" };
-    }
-
-    // Large boards can overlap rail lanes: in that case units are not strictly "outside"
-    // the field bounds, so we still choose the nearest inward side to keep shooting active.
     const distTop = Math.abs(sourcePoint.y - top);
     const distBottom = Math.abs(sourcePoint.y - bottom);
     const distLeft = Math.abs(sourcePoint.x - left);
     const distRight = Math.abs(sourcePoint.x - right);
-    const nearestVertical = distTop <= distBottom ? "top" : "bottom";
-    const nearestHorizontal = distLeft <= distRight ? "left" : "right";
-    const nearestVerticalDist = Math.min(distTop, distBottom);
-    const nearestHorizontalDist = Math.min(distLeft, distRight);
+    const distances = [
+      { side: "top", distance: distTop, aligned: alignedX, direction: { x: 0, y: 1, side: "top" } },
+      { side: "bottom", distance: distBottom, aligned: alignedX, direction: { x: 0, y: -1, side: "bottom" } },
+      { side: "left", distance: distLeft, aligned: alignedY, direction: { x: 1, y: 0, side: "left" } },
+      { side: "right", distance: distRight, aligned: alignedY, direction: { x: -1, y: 0, side: "right" } },
+    ].sort((a, b) => a.distance - b.distance);
 
-    if (alignedX && (!alignedY || nearestVerticalDist <= nearestHorizontalDist)) {
-      return nearestVertical === "top"
-        ? { x: 0, y: 1, side: "top" }
-        : { x: 0, y: -1, side: "bottom" };
-    }
-    if (alignedY) {
-      return nearestHorizontal === "left"
-        ? { x: 1, y: 0, side: "left" }
-        : { x: -1, y: 0, side: "right" };
+    for (const candidate of distances) {
+      if (!candidate.aligned) {
+        continue;
+      }
+      if (candidate.distance <= distances[0].distance + 0.001) {
+        return candidate.direction;
+      }
     }
 
     return null;
@@ -5360,42 +5344,77 @@ class Game {
     return null;
   }
 
-  getNextSpiralTargetForColor(color) {
-    const target = this.getNextSpiralTarget();
+  getOrderedTargetSideProbes(target) {
+    if (!target) {
+      return [];
+    }
+    const targetCenter = this.blockCenter(target);
+    const fieldWidth = LAYOUT.fieldCols * LAYOUT.fieldStep;
+    const fieldHeight = LAYOUT.fieldRows * LAYOUT.fieldStep;
+    const fieldLeft = LAYOUT.fieldX;
+    const fieldTop = LAYOUT.fieldY;
+    const fieldRight = fieldLeft + fieldWidth;
+    const fieldBottom = fieldTop + fieldHeight;
+    const preferenceRank = { top: 0, bottom: 1, left: 2, right: 3 };
+    return [
+      {
+        side: "top",
+        distance: Math.abs(targetCenter.y - fieldTop),
+        sourcePoint: { x: targetCenter.x, y: fieldTop - LAYOUT.cellSize },
+        direction: { x: 0, y: 1, side: "top" },
+      },
+      {
+        side: "bottom",
+        distance: Math.abs(fieldBottom - targetCenter.y),
+        sourcePoint: { x: targetCenter.x, y: fieldBottom + LAYOUT.cellSize },
+        direction: { x: 0, y: -1, side: "bottom" },
+      },
+      {
+        side: "left",
+        distance: Math.abs(targetCenter.x - fieldLeft),
+        sourcePoint: { x: fieldLeft - LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: 1, y: 0, side: "left" },
+      },
+      {
+        side: "right",
+        distance: Math.abs(fieldRight - targetCenter.x),
+        sourcePoint: { x: fieldRight + LAYOUT.cellSize, y: targetCenter.y },
+        direction: { x: -1, y: 0, side: "right" },
+      },
+    ].sort((a, b) => (a.distance - b.distance) || (preferenceRank[a.side] - preferenceRank[b.side]));
+  }
+
+  isSideReachableForTargetByTrack(side, targetCenter, lineHalfWidth) {
+    const trackRect = this.conveyor?.trackRect;
+    if (!trackRect) {
+      return true;
+    }
+    const radius = Math.max(0, Number(trackRect.r) || 0);
+    const minTopX = trackRect.x + radius;
+    const maxTopX = trackRect.x + trackRect.w - radius;
+    const minLeftY = trackRect.y + radius;
+    const maxLeftY = trackRect.y + trackRect.h - radius;
+
+    if (side === "top" || side === "bottom") {
+      return targetCenter.x >= minTopX - lineHalfWidth && targetCenter.x <= maxTopX + lineHalfWidth;
+    }
+    if (side === "left" || side === "right") {
+      return targetCenter.y >= minLeftY - lineHalfWidth && targetCenter.y <= maxLeftY + lineHalfWidth;
+    }
+    return true;
+  }
+
+  getPreferredReachableProbeForTarget(target) {
     if (!target) {
       return null;
     }
-    return target.color === color ? target : null;
-  }
-
-  canColorShootNextSpiralTarget(color) {
-    const target = this.getNextSpiralTarget();
-    if (!target || target.color !== color) {
-      return false;
-    }
-
     const lineHalfWidth = LAYOUT.cellSize * 0.65;
     const targetCenter = this.blockCenter(target);
-    const probes = [
-      {
-        sourcePoint: { x: LAYOUT.fieldX - LAYOUT.cellSize, y: targetCenter.y },
-        direction: { x: 1, y: 0 },
-      },
-      {
-        sourcePoint: { x: LAYOUT.fieldX + LAYOUT.fieldCols * LAYOUT.fieldStep + LAYOUT.cellSize, y: targetCenter.y },
-        direction: { x: -1, y: 0 },
-      },
-      {
-        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY - LAYOUT.cellSize },
-        direction: { x: 0, y: 1 },
-      },
-      {
-        sourcePoint: { x: targetCenter.x, y: LAYOUT.fieldY + LAYOUT.fieldRows * LAYOUT.fieldStep + LAYOUT.cellSize },
-        direction: { x: 0, y: -1 },
-      },
-    ];
-
+    const probes = this.getOrderedTargetSideProbes(target);
     for (const probe of probes) {
+      if (!this.isSideReachableForTargetByTrack(probe.side, targetCenter, lineHalfWidth)) {
+        continue;
+      }
       const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
       if (!hit) {
         continue;
@@ -5409,16 +5428,35 @@ class Game {
       )) {
         continue;
       }
-      return true;
+      return probe;
     }
+    return null;
+  }
 
-    return false;
+  getNextSpiralTargetForColor(color) {
+    const target = this.getNextSpiralTarget();
+    if (!target) {
+      return null;
+    }
+    return target.color === color ? target : null;
+  }
+
+  canColorShootNextSpiralTarget(color) {
+    const target = this.getNextSpiralTarget();
+    if (!target || target.color !== color) {
+      return false;
+    }
+    return this.getPreferredReachableProbeForTarget(target) !== null;
   }
 
   findTargetOnLine(sourcePoint, color, direction) {
     const lineHalfWidth = LAYOUT.cellSize * 0.65;
     const target = this.getNextSpiralTarget();
     if (!target || target.color !== color) {
+      return null;
+    }
+    const preferredProbe = this.getPreferredReachableProbeForTarget(target);
+    if (!preferredProbe || preferredProbe.direction.side !== direction.side) {
       return null;
     }
 
@@ -6190,6 +6228,8 @@ class Game {
       const depthCurve = depthT * depthT;
       const depthFade = lerp(1, 0.12, depthCurve);
       const isNextTarget = index === 0;
+      const isBlackTarget = String(target.color || "").toLowerCase() === "black";
+      const colorGhostAlphaMul = isBlackTarget ? 1 : 0.58;
       const sample = this.getColorSampleForColorKey(target.color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
       const luminance = clamp((0.2126 * sample.r + 0.7152 * sample.g + 0.0722 * sample.b) / 255, 0, 1);
       const brightBias = clamp((luminance - 0.52) * 1.35, 0, 0.55);
@@ -6197,7 +6237,9 @@ class Game {
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
       const pulseScale = 1 + (isNextTarget ? 0.24 : 0.18) * pulse * depthFade;
-      const glowAlpha = (0.06 + 0.3 * pulse) * depthFade * (isNextTarget ? 1.08 : 1) * (1 - brightBias * 0.45 + darkBias * 0.2);
+      const glowAlpha =
+        (0.06 + 0.3 * pulse) * depthFade * (isNextTarget ? 1.08 : 1) * (1 - brightBias * 0.45 + darkBias * 0.2) *
+        colorGhostAlphaMul;
       const glowRadius = target.size * (0.5 + 0.2 * pulse);
 
       ctx.save();
@@ -6228,7 +6270,7 @@ class Game {
       ctx.scale(pulseScale, pulseScale);
       ctx.translate(-centerX, -centerY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: (0.52 + 0.16 * pulse) * depthFade + (isNextTarget ? 0.14 : 0.05),
+        alpha: ((0.52 + 0.16 * pulse) * depthFade + (isNextTarget ? 0.14 : 0.05)) * colorGhostAlphaMul,
         shadowOpacity: (0.14 + 0.07 * pulse) * depthFade,
         bevelStrength: (0.15 + 0.07 * pulse) * depthFade + (isNextTarget ? 0.04 : 0),
       });
@@ -6245,7 +6287,7 @@ class Game {
       }
       ctx.restore();
       ctx.lineWidth = (isNextTarget ? 2.4 : 1.5) + 1.1 * pulse;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${((isNextTarget ? 0.38 : 0.16) + 0.46 * pulse * depthFade).toFixed(3)})`;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(((isNextTarget ? 0.38 : 0.16) + 0.46 * pulse * depthFade) * colorGhostAlphaMul).toFixed(3)})`;
       ctx.stroke();
       if (isNextTarget) {
         const markerSize = Math.max(3, target.size * 0.12 + pulse * 1.8);

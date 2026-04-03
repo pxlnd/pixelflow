@@ -1,0 +1,47 @@
+{
+  "corner": {
+    "preferred": "top",
+    "before": 1,
+    "afterFirst": 1,
+    "units": [
+      {
+        "id": 1,
+        "color": "black",
+        "styleKey": "rose",
+        "label": 1,
+        "ammo": 5,
+        "slotIndex": null,
+        "x": 117,
+        "y": 443.1
+      }
+    ]
+  },
+  "stacked": {
+    "preferredAfterFirst": null,
+    "before": 2,
+    "afterFirst": 0,
+    "afterSecond": 0,
+    "unitsAfterSecond": [
+      {
+        "id": 1,
+        "color": "red",
+        "styleKey": "rose",
+        "label": 1,
+        "ammo": 3,
+        "slotIndex": 0,
+        "x": 185.5,
+        "y": 1274
+      },
+      {
+        "id": 2,
+        "color": "red",
+        "styleKey": "coral",
+        "label": 2,
+        "ammo": 5,
+        "slotIndex": 3,
+        "x": 835.5,
+        "y": 1274
+      }
+    ]
+  }
+}
