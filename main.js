@@ -116,8 +116,29 @@ const getThemeConfigRaw = typeof THEME_REGISTRY.getThemeConfig === "function" ? 
 let LEVEL_MAP = new Map();
 let LEVEL_OVERRIDES_MAP = new Map();
 
+function canonicalizeLevelName(levelConfig) {
+  const levelId = String(levelConfig?.id || "").trim();
+  const rawName = String(levelConfig?.name || "").trim();
+  if (isPositiveIntegerString(levelId) && /^generated\b/i.test(rawName)) {
+    return `Level ${levelId}`;
+  }
+  if (rawName.length > 0) {
+    return rawName;
+  }
+  return isPositiveIntegerString(levelId) ? `Level ${levelId}` : "Level";
+}
+
 function rebuildLevelRegistry(levelDefinitions) {
-  LEVEL_DEFINITIONS = Array.isArray(levelDefinitions) ? levelDefinitions.filter(isValidLevelConfig) : [];
+  LEVEL_DEFINITIONS = Array.isArray(levelDefinitions)
+    ? levelDefinitions
+      .filter(isValidLevelConfig)
+      .map((level) => {
+        const normalized = cloneData(level);
+        normalized.id = String(normalized.id || "");
+        normalized.name = canonicalizeLevelName(normalized);
+        return normalized;
+      })
+    : [];
   DEFAULT_LEVEL_ID = String(LEVEL_DEFINITIONS[0]?.id || BUILTIN_FALLBACK_LEVEL.id);
   LEVEL_MAP = new Map(LEVEL_DEFINITIONS.map((level) => [String(level.id), level]));
 }
@@ -129,6 +150,7 @@ function upsertLevelDefinition(levelConfig) {
   const normalized = cloneData(levelConfig);
   const levelId = String(normalized.id || "");
   normalized.id = levelId;
+  normalized.name = canonicalizeLevelName(normalized);
   const existingIndex = LEVEL_DEFINITIONS.findIndex((level) => String(level?.id || "") === levelId);
   if (existingIndex >= 0) {
     LEVEL_DEFINITIONS[existingIndex] = normalized;
@@ -187,6 +209,7 @@ function loadLevelOverridesFromStorage() {
     }
     const normalized = cloneData(value);
     normalized.id = String(normalized.id || "");
+    normalized.name = canonicalizeLevelName(normalized);
     LEVEL_OVERRIDES_MAP.set(normalized.id, normalized);
   }
 }
@@ -203,6 +226,7 @@ function persistLevelOverride(levelConfig) {
   }
   const normalized = cloneData(levelConfig);
   normalized.id = String(normalized.id || "");
+  normalized.name = canonicalizeLevelName(normalized);
   LEVEL_OVERRIDES_MAP.set(normalized.id, normalized);
   return saveLevelOverridesToStorage();
 }
@@ -482,8 +506,7 @@ async function loadLevelJSONByNumber(levelNumber) {
       ? `Level ${levelNumber}`
       : String(normalizedLevel.name || `Level ${levelNumber}`);
     if (
-      /^generated\b/i.test(normalizedLevel.name)
-      || /^debug\b/i.test(normalizedLevel.name)
+      /^debug\b/i.test(normalizedLevel.name)
       || isGenericLevelName(normalizedLevel.name)
     ) {
       normalizedLevel.name = `Level ${levelNumber}`;
@@ -608,6 +631,14 @@ const BLOCK_COLOR_TO_RGB = {
   beige: { r: 223, g: 177, b: 128 },
   gray_alt: { r: 156, g: 156, b: 156 },
 };
+
+const DEBUG_IMAGE_GENERATOR_BASE_COLOR_TO_RGB = Object.freeze(
+  Object.fromEntries(
+    Object.entries(BLOCK_COLOR_TO_RGB)
+      .filter(([color]) => Object.prototype.hasOwnProperty.call(BLOCK_COLOR_TO_PATTERN_CHAR, color))
+      .map(([color, sample]) => [color, { r: sample.r, g: sample.g, b: sample.b }])
+  )
+);
 
 const BLOCK_COLOR_LABELS = {
   green: "зелёный",
@@ -1023,6 +1054,48 @@ function getHueDegrees(r, g, b) {
     hue += 360;
   }
   return hue;
+}
+
+function getColorSaturationRatio(r, g, b) {
+  const nr = r / 255;
+  const ng = g / 255;
+  const nb = b / 255;
+  const max = Math.max(nr, ng, nb);
+  const min = Math.min(nr, ng, nb);
+  if (max <= 0.00001) {
+    return 0;
+  }
+  return (max - min) / max;
+}
+
+function getDebugImageColorFamily(r, g, b) {
+  const saturation = getColorSaturationRatio(r, g, b);
+  if (saturation < 0.14) {
+    return null;
+  }
+  const hue = getHueDegrees(r, g, b);
+  if (hue === null) {
+    return null;
+  }
+  if (hue < 18 || hue >= 345) {
+    return "red";
+  }
+  if (hue < 48) {
+    return "orange";
+  }
+  if (hue < 72) {
+    return "yellow";
+  }
+  if (hue < 170) {
+    return "green";
+  }
+  if (hue < 255) {
+    return "blue";
+  }
+  if (hue < 300) {
+    return "purple";
+  }
+  return "pink";
 }
 
 let CURRENT_LEVEL = getLevelConfig(DEFAULT_LEVEL_ID);
@@ -2171,6 +2244,7 @@ class Game {
     this.blockTileUsesSourceImage = {};
     this.chickenSpriteColorSampleByColor = {};
     this.debugBlockColorPalette = [];
+    this.debugImageBucketColorCache = new Map();
     this.generatedBackdropCache = null;
 
     this.sprites = {
@@ -2740,42 +2814,18 @@ class Game {
   }
 
   rebuildBlockColorSamplerPalette() {
-    const paletteByColor = new Map();
-    const addSample = (color, sample, priority = 0) => {
-      const normalizedColor = normalizeBlockColorName(color);
-      if (!normalizedColor || !sample) {
-        return;
-      }
-      const current = paletteByColor.get(normalizedColor);
-      if (!current || priority >= current.priority) {
-        paletteByColor.set(normalizedColor, {
-          color: normalizedColor,
-          r: clamp(Math.round(sample.r), 0, 255),
-          g: clamp(Math.round(sample.g), 0, 255),
-          b: clamp(Math.round(sample.b), 0, 255),
-          priority,
-        });
-      }
-    };
-
-    for (const [color, sample] of Object.entries(BLOCK_COLOR_TO_RGB)) {
-      addSample(color, sample, 0);
-    }
-    for (const [color, sample] of Object.entries(this.blockTileColorSampleByColor)) {
-      addSample(color, sample, 2);
-    }
-
-    const palette = [];
-    for (const entry of paletteByColor.values()) {
-      palette.push({
-        color: entry.color,
-        r: entry.r,
-        g: entry.g,
-        b: entry.b,
-        lab: rgbToLab(entry.r, entry.g, entry.b),
-      });
-    }
-    this.debugBlockColorPalette = palette;
+    this.debugImageBucketColorCache = new Map();
+    this.debugBlockColorPalette = Object.entries(DEBUG_IMAGE_GENERATOR_BASE_COLOR_TO_RGB).map(([color, sample]) => ({
+      color,
+      r: sample.r,
+      g: sample.g,
+      b: sample.b,
+      lab: rgbToLab(sample.r, sample.g, sample.b),
+      hue: getHueDegrees(sample.r, sample.g, sample.b),
+      saturation: getColorSaturationRatio(sample.r, sample.g, sample.b),
+      luma: getLuma(sample.r, sample.g, sample.b) / 255,
+      family: getDebugImageColorFamily(sample.r, sample.g, sample.b),
+    }));
   }
 
   getNearestDebugPaletteColor(r, g, b) {
@@ -2783,21 +2833,13 @@ class Game {
     if (!Array.isArray(palette) || palette.length === 0) {
       return getNearestBlockColor(r, g, b);
     }
-    const targetLab = rgbToLab(r, g, b);
     let bestColor = palette[0].color;
     let bestDistance = Infinity;
     for (const sample of palette) {
-      const dL = targetLab.l - sample.lab.l;
-      const dA = targetLab.a - sample.lab.a;
-      const dB = targetLab.b - sample.lab.b;
-      const dRgbR = r - sample.r;
-      const dRgbG = g - sample.g;
-      const dRgbB = b - sample.b;
-      const distanceSq =
-        dL * dL
-        + dA * dA
-        + dB * dB
-        + (dRgbR * dRgbR + dRgbG * dRgbG + dRgbB * dRgbB) * 0.0012;
+      const dR = r - sample.r;
+      const dG = g - sample.g;
+      const dB = b - sample.b;
+      const distanceSq = dR * dR + dG * dG + dB * dB;
       if (distanceSq < bestDistance) {
         bestDistance = distanceSq;
         bestColor = sample.color;
@@ -2895,6 +2937,113 @@ class Game {
     }
     const unpremul = unpremultiplyRgba(r, g, b, a);
     return this.getNearestDebugPaletteColor(unpremul.r, unpremul.g, unpremul.b);
+  }
+
+  buildDebugImageQuantizedPixelMap(data, sourceWidth, sourceHeight) {
+    const total = sourceWidth * sourceHeight;
+    const quantized = new Array(total);
+    const bucketCache = new Map();
+    for (let index = 0, pixelIndex = 0; pixelIndex < total; pixelIndex += 1, index += 4) {
+      const alpha = data[index + 3];
+      if (alpha < 20) {
+        quantized[pixelIndex] = null;
+        continue;
+      }
+      const unpremul = unpremultiplyRgba(data[index], data[index + 1], data[index + 2], alpha);
+      const bucketKey = `${Math.floor(unpremul.r / 16)}-${Math.floor(unpremul.g / 16)}-${Math.floor(unpremul.b / 16)}`;
+      let mappedColor = bucketCache.get(bucketKey);
+      if (!mappedColor) {
+        mappedColor = this.pickSampledBlockColor(unpremul.r, unpremul.g, unpremul.b, alpha);
+        if (mappedColor) {
+          bucketCache.set(bucketKey, mappedColor);
+        }
+      }
+      quantized[pixelIndex] = mappedColor || null;
+    }
+    this.debugImageBucketColorCache = bucketCache;
+    return quantized;
+  }
+
+  sampleDebugImageCellColor(quantizedPixels, sourceWidth, sx0, sy0, sx1, sy1) {
+    const cellWidth = Math.max(1, sx1 - sx0);
+    const cellHeight = Math.max(1, sy1 - sy0);
+    const area = cellWidth * cellHeight;
+    const colorWeights = new Map();
+    let opaqueWeight = 0;
+
+    for (let sy = sy0; sy < sy1; sy++) {
+      let pixelIndex = sy * sourceWidth + sx0;
+      for (let sx = sx0; sx < sx1; sx++, pixelIndex += 1) {
+        const mappedColor = quantizedPixels[pixelIndex];
+        if (!mappedColor) {
+          continue;
+        }
+        colorWeights.set(mappedColor, (colorWeights.get(mappedColor) || 0) + 1);
+        opaqueWeight += 1;
+      }
+    }
+
+    if (opaqueWeight <= Math.max(1, area * 0.06)) {
+      return { color: null, purity: 0, weight: 0 };
+    }
+
+    let dominantColor = null;
+    let dominantWeight = -1;
+    for (const [color, weight] of colorWeights.entries()) {
+      if (weight > dominantWeight) {
+        dominantWeight = weight;
+        dominantColor = color;
+      }
+    }
+
+    return {
+      color: dominantColor,
+      purity: dominantWeight / Math.max(1, opaqueWeight),
+      weight: opaqueWeight,
+    };
+  }
+
+  sampleDebugImageMatrixForPhase(quantizedPixels, sourceWidth, sourceHeight, cols, rows, phaseX = 0, phaseY = 0) {
+    const stepX = sourceWidth / Math.max(1, cols);
+    const stepY = sourceHeight / Math.max(1, rows);
+    const colorMatrix = [];
+    const colorCounts = {};
+    let filledCells = 0;
+    let totalPurity = 0;
+    let scoredCells = 0;
+
+    for (let row = 0; row < rows; row++) {
+      const nextRow = [];
+      let sy0 = Math.floor(row * stepY + phaseY * stepY);
+      let sy1 = Math.floor((row + 1) * stepY + phaseY * stepY);
+      sy0 = clamp(sy0, 0, Math.max(0, sourceHeight - 1));
+      sy1 = clamp(Math.max(sy0 + 1, sy1), sy0 + 1, sourceHeight);
+
+      for (let col = 0; col < cols; col++) {
+        let sx0 = Math.floor(col * stepX + phaseX * stepX);
+        let sx1 = Math.floor((col + 1) * stepX + phaseX * stepX);
+        sx0 = clamp(sx0, 0, Math.max(0, sourceWidth - 1));
+        sx1 = clamp(Math.max(sx0 + 1, sx1), sx0 + 1, sourceWidth);
+
+        const sampled = this.sampleDebugImageCellColor(quantizedPixels, sourceWidth, sx0, sy0, sx1, sy1);
+        const color = sampled.color;
+        if (color !== null) {
+          colorCounts[color] = (colorCounts[color] || 0) + 1;
+          filledCells += 1;
+          totalPurity += sampled.purity;
+          scoredCells += 1;
+        }
+        nextRow.push(color);
+      }
+      colorMatrix.push(nextRow);
+    }
+
+    return {
+      colorMatrix,
+      colorCounts,
+      filledCells,
+      score: scoredCells > 0 ? totalPurity / scoredCells : 0,
+    };
   }
 
   resolveBlockTileColorKey(color) {
@@ -6270,45 +6419,33 @@ class Game {
       return;
     }
 
+    const denom = Math.max(1, targets.length - 1);
     const now = performance.now();
-    const waveDurationMs = 1500;
-    const maxWaveIndex = Math.max(1, targets.length - 1);
-    const headWidth = 0.32;
-    const trailReach = 2.15;
-    const staggerMs = 26;
-
+    const waveDurationMs = 1400;
+    const waveSpan = Math.max(1, targets.length - 1);
+    const waveHead = (((now % waveDurationMs) + waveDurationMs) % waveDurationMs) / waveDurationMs * waveSpan;
+    const waveWidth = 1.25;
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
-      const localPhase = ((((now - index * staggerMs) % waveDurationMs) + waveDurationMs) % waveDurationMs) / waveDurationMs;
-      const localWaveHead = localPhase * maxWaveIndex;
-      const rawDistance = index - localWaveHead;
-      const distanceFromWave = Math.abs(rawDistance);
-      const headSpike = Math.exp(-(distanceFromWave * distanceFromWave) / Math.max(0.01, headWidth));
-      // Forward-only trail: highlight 1-2 next blocks after the wave head.
-      let forwardDistance = rawDistance;
-      if (forwardDistance < 0) {
-        forwardDistance += targets.length;
-      }
-      const trailT = clamp(1 - forwardDistance / trailReach, 0, 1);
-      const trail = trailT * trailT;
-      const pulse = clamp(0.05 + 0.76 * headSpike + 0.36 * trail, 0, 1);
-      const depthT = targets.length <= 1 ? 0 : index / (targets.length - 1);
-      const depthCurve = depthT * depthT;
-      const depthFade = lerp(1, 0.12, depthCurve);
       const isNextTarget = index === 0;
+      const toFirstRaw = targets.length <= 1 ? 1 : 1 - index / denom;
+      // Smooth fade: first target = 1, tail target = 0.
+      const toFirstSmooth = toFirstRaw * toFirstRaw * (3 - 2 * toFirstRaw);
+      if (toFirstSmooth <= 0.001) {
+        continue;
+      }
+      const waveDistance = Math.abs(index - waveHead);
+      const wrappedWaveDistance = Math.min(waveDistance, Math.abs(index + targets.length - waveHead));
+      const waveInfluence = Math.exp(-(wrappedWaveDistance * wrappedWaveDistance) / (waveWidth * waveWidth));
+      const waveBoost = 1 + 0.22 * waveInfluence;
       const isBlackTarget = String(target.color || "").toLowerCase() === "black";
       const colorGhostAlphaMul = isBlackTarget ? 1 : 0.58;
-      const sample = this.getColorSampleForColorKey(target.color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
-      const luminance = clamp((0.2126 * sample.r + 0.7152 * sample.g + 0.0722 * sample.b) / 255, 0, 1);
-      const brightBias = clamp((luminance - 0.52) * 1.35, 0, 0.55);
-      const darkBias = clamp((0.46 - luminance) * 1.45, 0, 0.62);
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const pulseScale = 1 + (isNextTarget ? 0.24 : 0.18) * pulse * depthFade;
-      const glowAlpha =
-        (0.06 + 0.3 * pulse) * depthFade * (isNextTarget ? 1.08 : 1) * (1 - brightBias * 0.45 + darkBias * 0.2) *
-        colorGhostAlphaMul;
-      const glowRadius = target.size * (0.5 + 0.2 * pulse);
+      const growScale = lerp(0.7, 1.18, toFirstSmooth) * waveBoost;
+      const alphaBase = toFirstSmooth * colorGhostAlphaMul;
+      const glowAlpha = ((0.2 * alphaBase) + (isNextTarget ? 0.08 * colorGhostAlphaMul : 0)) * waveBoost;
+      const glowRadius = target.size * (0.44 + 0.34 * toFirstSmooth) * (1 + 0.15 * waveInfluence);
 
       ctx.save();
       const glowGradient = ctx.createRadialGradient(
@@ -6319,15 +6456,15 @@ class Game {
         centerY + target.size * 0.18,
         glowRadius
       );
-      glowGradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha})`);
+      glowGradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha.toFixed(3)})`);
       glowGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
       ctx.fillStyle = glowGradient;
       roundedRect(
         ctx,
-        target.x - target.size * 0.16,
-        target.y + target.size * 0.18,
-        target.size * 1.32,
-        target.size * 1.04,
+        target.x - target.size * 0.18,
+        target.y + target.size * 0.16,
+        target.size * 1.36,
+        target.size * 1.08,
         Math.max(8, target.size * 0.32)
       );
       ctx.fill();
@@ -6335,33 +6472,22 @@ class Game {
 
       ctx.save();
       ctx.translate(centerX, centerY);
-      ctx.scale(pulseScale, pulseScale);
+      ctx.scale(growScale, growScale);
       ctx.translate(-centerX, -centerY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: ((0.52 + 0.16 * pulse) * depthFade + (isNextTarget ? 0.14 : 0.05)) * colorGhostAlphaMul,
-        shadowOpacity: (0.14 + 0.07 * pulse) * depthFade,
-        bevelStrength: (0.15 + 0.07 * pulse) * depthFade + (isNextTarget ? 0.04 : 0),
+        alpha: ((0.78 * alphaBase) + (isNextTarget ? 0.14 * colorGhostAlphaMul : 0)) * waveBoost,
+        shadowOpacity: 0.08 + 0.14 * toFirstSmooth,
+        bevelStrength: 0.1 + 0.2 * toFirstSmooth,
       });
       roundedRect(ctx, target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1, 8);
-      ctx.save();
-      ctx.clip();
-      if (darkBias > 0.001) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${(0.04 + darkBias * 0.28).toFixed(3)})`;
-        ctx.fillRect(target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1);
-      }
-      if (brightBias > 0.001) {
-        ctx.fillStyle = `rgba(0, 0, 0, ${(0.02 + brightBias * 0.22).toFixed(3)})`;
-        ctx.fillRect(target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1);
-      }
-      ctx.restore();
-      ctx.lineWidth = (isNextTarget ? 2.4 : 1.5) + 1.1 * pulse;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${(((isNextTarget ? 0.38 : 0.16) + 0.46 * pulse * depthFade) * colorGhostAlphaMul).toFixed(3)})`;
+      ctx.lineWidth = isNextTarget ? 2.2 : 1.35;
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(((0.52 * alphaBase) + (isNextTarget ? 0.16 : 0)) * waveBoost).toFixed(3)})`;
       ctx.stroke();
       if (isNextTarget) {
-        const markerSize = Math.max(3, target.size * 0.12 + pulse * 1.8);
+        const markerSize = Math.max(3, target.size * 0.14);
         const markerX = target.x + target.size - markerSize - 3;
         const markerY = target.y + 3;
-        ctx.fillStyle = `rgba(255, 255, 255, ${(0.48 + 0.42 * pulse).toFixed(3)})`;
+        ctx.fillStyle = `rgba(255, 255, 255, ${(0.66 * colorGhostAlphaMul).toFixed(3)})`;
         roundedRect(ctx, markerX, markerY, markerSize, markerSize, Math.max(2, markerSize * 0.35));
         ctx.fill();
       }
@@ -8148,43 +8274,46 @@ class Game {
 
   sampleDebugImageToMatrix(image, cols, rows) {
     const sample = document.createElement("canvas");
-    sample.width = cols;
-    sample.height = rows;
+    const sourceWidth = Math.max(1, Math.round(image.naturalWidth || image.width || cols));
+    const sourceHeight = Math.max(1, Math.round(image.naturalHeight || image.height || rows));
+    sample.width = sourceWidth;
+    sample.height = sourceHeight;
     const ctx = sample.getContext("2d", { alpha: true, willReadFrequently: true });
     if (!ctx) {
       throw new Error("Не удалось создать canvas для генератора.");
     }
-    ctx.clearRect(0, 0, cols, rows);
+    ctx.clearRect(0, 0, sourceWidth, sourceHeight);
     ctx.imageSmoothingEnabled = false;
     if ("imageSmoothingQuality" in ctx) {
       ctx.imageSmoothingQuality = "low";
     }
-    ctx.drawImage(image, 0, 0, cols, rows);
-    const { data } = ctx.getImageData(0, 0, cols, rows);
-    const colorMatrix = [];
-    const colorCounts = {};
-    let filledCells = 0;
+    ctx.drawImage(image, 0, 0, sourceWidth, sourceHeight);
+    const { data } = ctx.getImageData(0, 0, sourceWidth, sourceHeight);
+    const quantizedPixels = this.buildDebugImageQuantizedPixelMap(data, sourceWidth, sourceHeight);
+    const phaseCandidates = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875];
+    let bestResult = null;
 
-    for (let row = 0; row < rows; row++) {
-      const nextRow = [];
-      for (let col = 0; col < cols; col++) {
-        const index = (row * cols + col) * 4;
-        const color = this.pickSampledBlockColor(
-          data[index],
-          data[index + 1],
-          data[index + 2],
-          data[index + 3]
+    for (const phaseY of phaseCandidates) {
+      for (const phaseX of phaseCandidates) {
+        const candidate = this.sampleDebugImageMatrixForPhase(
+          quantizedPixels,
+          sourceWidth,
+          sourceHeight,
+          cols,
+          rows,
+          phaseX,
+          phaseY
         );
-        if (color !== null) {
-          colorCounts[color] = (colorCounts[color] || 0) + 1;
-          filledCells += 1;
+        if (
+          !bestResult
+          || candidate.score > bestResult.score + 0.0001
+          || (Math.abs(candidate.score - bestResult.score) <= 0.0001 && candidate.filledCells > bestResult.filledCells)
+        ) {
+          bestResult = candidate;
         }
-        nextRow.push(color);
       }
-      colorMatrix.push(nextRow);
     }
-
-    return { colorMatrix, colorCounts, filledCells };
+    return bestResult || { colorMatrix: [], colorCounts: {}, filledCells: 0 };
   }
 
   buildDebugImageLevel(colorMatrix, metadata = {}) {

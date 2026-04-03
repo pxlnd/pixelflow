@@ -20,6 +20,19 @@ Original prompt: Твоя задача: создать полностью раб
 - Verification:
 - `output/web-game/side-burst-fix/results.json` shows side chain cleared in one pass (`remaining 5 -> 0` by mid checkpoint, ammo `50 -> 45`).
 - Corner guard still holds (`remaining: 1`, no early shot at 2600ms).
+- 2026-04-03: target ghost restyled per request.
+- `drawTargetSilhouette()` no longer uses wave-head pulse for chain falloff.
+- New behavior: each next ghost toward the first target grows in size, while tail transparency smoothly fades to exact zero.
+- Verification screenshot: `output/web-game/ghost-grow-fade/shot.png`.
+- 2026-04-03: wave effect re-added on top of the new monotonic ghost gradient.
+- Kept current behavior (size grows toward first block + tail fades to full zero), and added a moving Gaussian wave boost for scale/alpha/glow.
+- Verification screenshot: `output/web-game/ghost-grow-fade-wave/shot.png`.
+- 2026-04-03: fixed level title normalization for autoloaded generated levels.
+- Root cause: `loadLevelJSONByNumber()` forcibly renamed names starting with `Generated...` to `Level N`.
+- Fix: removed `^generated` override from normalization, so level 3 title now keeps `Generated 35x35` in the top panel.
+- 2026-04-03: follow-up fix for level-title issue after user report "не помогло".
+- Cause: title could still come from saved overrides and stale cached `main.js`.
+- Fix: canonicalized level names in registry/override paths (`generated*` on numeric ids -> `Level N`) and bumped script cache-buster in `index.html` to `main.js?v=20260403-4`.
 
 - Создан чистый статический прототип на `index.html`, `style.css`, `main.js`.
 - Визуал и UI собраны в одном `canvas` для близкой к референсу композиции.
