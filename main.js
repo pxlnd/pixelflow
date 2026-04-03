@@ -1563,20 +1563,35 @@ class Unit {
         return;
       }
 
-      const shootDirection = game.getInwardShootDirection(this.position);
-      if (!shootDirection) {
-        return;
-      }
-
       let shotsFired = 0;
-      while (this.ammo > 0 && shotsFired < MAX_BURST_SHOTS_PER_TICK) {
-        const target = game.findTargetOnLine(this.position, this.color, shootDirection);
-        if (!target) {
+      const sweepStart = this.prevPosition ? { ...this.prevPosition } : { ...this.position };
+      const sweepEnd = this.position ? { ...this.position } : { ...sweepStart };
+      const sweepDistance = Math.hypot(sweepEnd.x - sweepStart.x, sweepEnd.y - sweepStart.y);
+      const sampleStep = Math.max(3, LAYOUT.cellSize * 0.45);
+      const sampleCount = Math.max(1, Math.ceil(sweepDistance / sampleStep));
+
+      for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+        if (this.ammo <= 0 || shotsFired >= MAX_BURST_SHOTS_PER_TICK) {
           break;
         }
-        this.ammo -= 1;
-        game.fireProjectile(this, target);
-        shotsFired += 1;
+        const t = sampleCount <= 1 ? 1 : sampleIndex / (sampleCount - 1);
+        const samplePoint = {
+          x: sweepStart.x + (sweepEnd.x - sweepStart.x) * t,
+          y: sweepStart.y + (sweepEnd.y - sweepStart.y) * t,
+        };
+        const shootDirection = game.getInwardShootDirection(samplePoint);
+        if (!shootDirection) {
+          continue;
+        }
+        while (this.ammo > 0 && shotsFired < MAX_BURST_SHOTS_PER_TICK) {
+          const target = game.findTargetOnLine(samplePoint, this.color, shootDirection);
+          if (!target) {
+            break;
+          }
+          this.ammo -= 1;
+          game.fireProjectile(this, target);
+          shotsFired += 1;
+        }
       }
 
       if (shotsFired > 0) {
@@ -5433,6 +5448,59 @@ class Game {
     return null;
   }
 
+  getAllowedReachableProbesForTarget(target) {
+    if (!target) {
+      return [];
+    }
+    const lineHalfWidth = LAYOUT.cellSize * 0.65;
+    const targetCenter = this.blockCenter(target);
+    const reachable = [];
+    const probes = this.getOrderedTargetSideProbes(target);
+    for (const probe of probes) {
+      if (!this.isSideReachableForTargetByTrack(probe.side, targetCenter, lineHalfWidth)) {
+        continue;
+      }
+      const hit = this.getLineHitForBlock(probe.sourcePoint, probe.direction, target, lineHalfWidth);
+      if (!hit) {
+        continue;
+      }
+      if (this.isPathBlockedByPlacedBlocks(
+        probe.sourcePoint,
+        probe.direction,
+        hit.forwardDistance,
+        lineHalfWidth * 0.9,
+        target.id
+      )) {
+        continue;
+      }
+      reachable.push(probe);
+    }
+
+    if (reachable.length === 0) {
+      return [];
+    }
+
+    const bySide = new Map(reachable.map((probe) => [probe.side, probe]));
+    const primary = reachable[0];
+    const allowed = [primary];
+    const oppositeBySide = {
+      top: "bottom",
+      bottom: "top",
+      left: "right",
+      right: "left",
+    };
+    // If target is not near the border, allow both sides of the same axis.
+    // This prevents slow "one-side-only" firing on large sparse generated boards.
+    const centerThreshold = LAYOUT.cellSize * 2.2;
+    if (primary.distance >= centerThreshold) {
+      const opposite = bySide.get(oppositeBySide[primary.side]);
+      if (opposite) {
+        allowed.push(opposite);
+      }
+    }
+    return allowed;
+  }
+
   getNextSpiralTargetForColor(color) {
     const target = this.getNextSpiralTarget();
     if (!target) {
@@ -5446,7 +5514,7 @@ class Game {
     if (!target || target.color !== color) {
       return false;
     }
-    return this.getPreferredReachableProbeForTarget(target) !== null;
+    return this.getAllowedReachableProbesForTarget(target).length > 0;
   }
 
   findTargetOnLine(sourcePoint, color, direction) {
@@ -5455,8 +5523,8 @@ class Game {
     if (!target || target.color !== color) {
       return null;
     }
-    const preferredProbe = this.getPreferredReachableProbeForTarget(target);
-    if (!preferredProbe || preferredProbe.direction.side !== direction.side) {
+    const allowedProbes = this.getAllowedReachableProbesForTarget(target);
+    if (!allowedProbes.some((probe) => probe.direction.side === direction.side)) {
       return null;
     }
 

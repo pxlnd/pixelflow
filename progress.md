@@ -9,6 +9,17 @@ Original prompt: Твоя задача: создать полностью раб
 - Root cause: preferred side could be chosen from abstract field probes even when that side was not physically reachable by the rounded rail path.
 - Fix: `getPreferredReachableProbeForTarget()` now filters probes through `isSideReachableForTargetByTrack()` (track straight-segment reach check with rail radius), enabling fallback to the next valid side instead of deadlocking shots.
 - Verification: `output/web-game/loop-no-shot-fix/state-summary.json` shows shots resumed (`remainingBlocks 400 -> 392`, ammo drops on active units).
+- 2026-04-03: improved firing cadence on sparse/generated boards (e.g. `35x35` with tiny center art).
+- Root cause: target-side gating allowed only one probe side, so units often waited a full lap and appeared to "skip" blocks.
+- Fix: added `getAllowedReachableProbesForTarget()` and switched shooting checks to use it.
+- Rule: keep strict corner behavior (`top` only for top-left corner case), but when target is away from edges allow opposite side on the same axis (e.g. `top+bottom`) to avoid one-side-only stalls.
+- Verification: `output/web-game/shooting-speed-fix/results.json` (`corner.allowedSides: ["top"]`, `central.allowed: ["top","bottom"]`, and live run `remaining 398 -> 388` with ammo drop).
+- 2026-04-03: fixed "shoots only one block and skips on same-color side chains" regression for tiny cells / high speed.
+- Root cause: hit-check sampled only the unit's current point each frame; at high rail speed the unit could step over narrow fire windows between frames.
+- Fix: in `Unit.update()` fire resolution now sweeps along the full movement segment (`prevPosition -> position`) with sub-samples based on `LAYOUT.cellSize`, instead of a single-point check.
+- Verification:
+- `output/web-game/side-burst-fix/results.json` shows side chain cleared in one pass (`remaining 5 -> 0` by mid checkpoint, ammo `50 -> 45`).
+- Corner guard still holds (`remaining: 1`, no early shot at 2600ms).
 
 - Создан чистый статический прототип на `index.html`, `style.css`, `main.js`.
 - Визуал и UI собраны в одном `canvas` для близкой к референсу композиции.
