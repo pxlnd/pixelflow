@@ -601,6 +601,10 @@ const BLOCK_COLOR_TO_RGB = {
   peach: { r: 234, g: 197, b: 150 },
   rose: { r: 220, g: 96, b: 140 },
   orchid: { r: 164, g: 109, b: 210 },
+  red_alt: { r: 255, g: 56, b: 142 },
+  dirty_pink: { r: 214, g: 146, b: 167 },
+  beige: { r: 223, g: 177, b: 128 },
+  gray_alt: { r: 156, g: 156, b: 156 },
 };
 
 const BLOCK_COLOR_LABELS = {
@@ -622,37 +626,60 @@ const BLOCK_COLOR_LABELS = {
   peach: "персиковый",
   rose: "роза",
   orchid: "орхидея",
+  red_alt: "малиновый",
+  dirty_pink: "припылённо-розовый",
+  beige: "бежевый",
+  gray_alt: "серый",
 };
 
 const CHICKEN_SPRITE_SOURCE_BY_COLOR = {
-  green: "ui/green_chicken 1.png",
-  black: "ui/black 1.png",
-  blue: "ui/blue_chicken 1.png",
-  white: "ui/white_chicken 1.png",
-  yellow: "ui/chicken 2.png",
-  red: "ui/red_chicken 1.png",
+  green: "ui/birds/green.png",
+  black: "ui/birds/black.png",
+  blue: "ui/birds/blue.png",
+  white: "ui/birds/white.png",
+  yellow: "ui/birds/yellow.png",
+  red: "ui/birds/red.png",
+  orange: "ui/birds/orange.png",
+  brown: "ui/birds/brown.png",
+  light_purple: "ui/birds/light_purple.png",
+  dark_pink: "ui/birds/dark_pink.png",
+  dark_blue: "ui/birds/dark_blue.png",
+  dark_purple: "ui/birds/dark_purple.png",
+  light_green: "ui/birds/light_green.png",
+  dirty_pink: "ui/birds/dirty_pink.png",
+  beige: "ui/birds/beige.png",
+  gray: "ui/birds/grey.png",
+  dark_dark_blue: "ui/birds/dark_dark_blue.png",
+  very_dark_blue: "ui/birds/very_dark_blue.png",
+  blue_alt: "ui/birds/blue_alt.png",
+  levender: "ui/birds/levender.png",
+  малиновый: "ui/birds/малиновый.png",
 };
 
 const BLOCK_TILE_SOURCE_BY_COLOR = {
-  green: "ui/green.png",
-  black: "ui/black.png",
-  blue: "ui/blue.png",
-  white: "ui/white.png",
-  yellow: "ui/yellow.png",
-  red: "ui/red.png",
-  red_alt: "ui/hot_pink.png",
-  orange: "ui/orange.png",
-  brown: "ui/brown.png",
-  light_purple: "ui/light_purple.png",
-  dark_pink: "ui/dark_pink.png",
-  dark_blue: "ui/dark_blue.png",
-  dark_purple: "ui/dark_purple.png",
-  light_green: "ui/light_green.png",
-  gray: "ui/gray.png",
-  pink: "ui/pink.png",
-  peach: "ui/peach.png",
-  rose: "ui/rose.png",
-  orchid: "ui/orchid.png",
+  green: "ui/blocks/green.png",
+  black: "ui/blocks/black.png",
+  blue: "ui/blocks/blue.png",
+  white: "ui/blocks/white.png",
+  yellow: "ui/blocks/yellow.png",
+  red: "ui/blocks/red.png",
+  red_alt: "ui/blocks/hot_pink.png",
+  orange: "ui/blocks/orange.png",
+  brown: "ui/blocks/brown.png",
+  light_purple: "ui/blocks/light_purple.png",
+  dark_pink: "ui/blocks/dark_pink.png",
+  dark_blue: "ui/blocks/dark_blue.png",
+  dark_purple: "ui/blocks/dark_purple.png",
+  light_green: "ui/blocks/light_green.png",
+  gray: "ui/blocks/gray.png",
+  gray_alt: "ui/blocks/gray_alt.png",
+  pink: "ui/blocks/pink.png",
+  peach: "ui/blocks/peach.png",
+  rose: "ui/blocks/rose.png",
+  orchid: "ui/blocks/orchid.png",
+  magenta: "ui/blocks/magenta.png",
+  dirty_pink: "ui/blocks/dirty_pink.png",
+  beige: "ui/blocks/beige.png",
 };
 
 const BLOCK_TILE_COLOR_ALIASES = {
@@ -674,6 +701,7 @@ const DEBUG_IMAGE_GRID_MAX = 40;
 const DEBUG_IMAGE_SCALE_MIN = 0.5;
 const DEBUG_IMAGE_SCALE_MAX = 3;
 const DEBUG_IMAGE_OFFSET_Y_DEFAULT = -37;
+const MAX_SIMULATION_DT = 0.2;
 
 const BLOCK_COLOR_CONFIG = {
   green: {
@@ -780,8 +808,48 @@ const BLOCK_COLOR_CONFIG = {
   },
 };
 
+function deriveBlockColorConfigFromRgb(sample) {
+  const r = clamp(Math.round(sample?.r ?? 129), 0, 255);
+  const g = clamp(Math.round(sample?.g ?? 195), 0, 255);
+  const b = clamp(Math.round(sample?.b ?? 65), 0, 255);
+  const baseRgb = { r: clamp(Math.round(r * 1.08), 0, 255), g: clamp(Math.round(g * 1.08), 0, 255), b: clamp(Math.round(b * 1.08), 0, 255) };
+  const midRgb = { r: clamp(Math.round(r * 0.96), 0, 255), g: clamp(Math.round(g * 0.96), 0, 255), b: clamp(Math.round(b * 0.96), 0, 255) };
+  const darkRgb = { r: clamp(Math.round(r * 0.74), 0, 255), g: clamp(Math.round(g * 0.74), 0, 255), b: clamp(Math.round(b * 0.74), 0, 255) };
+  const particleRgb = { r: clamp(Math.round(r * 0.88), 0, 255), g: clamp(Math.round(g * 0.88), 0, 255), b: clamp(Math.round(b * 0.88), 0, 255) };
+  return {
+    styleKeys: ["mint", "sky"],
+    sprite: {
+      base: `rgb(${baseRgb.r}, ${baseRgb.g}, ${baseRgb.b})`,
+      mid: `rgb(${midRgb.r}, ${midRgb.g}, ${midRgb.b})`,
+      dark: `rgb(${darkRgb.r}, ${darkRgb.g}, ${darkRgb.b})`,
+    },
+    face: `rgb(${r}, ${g}, ${b})`,
+    projectile: {
+      core: `rgb(${clamp(Math.round(r * 0.9), 0, 255)}, ${clamp(Math.round(g * 0.9), 0, 255)}, ${clamp(Math.round(b * 0.9), 0, 255)})`,
+      light: `rgb(${clamp(Math.round(r * 1.18), 0, 255)}, ${clamp(Math.round(g * 1.18), 0, 255)}, ${clamp(Math.round(b * 1.18), 0, 255)})`,
+      glowMid: `rgba(${r},${g},${b},0.24)`,
+      glowEnd: `rgba(${r},${g},${b},0.58)`,
+      auraInner: `rgba(${r},${g},${b},0.76)`,
+      auraMid: `rgba(${r},${g},${b},0.34)`,
+    },
+    ring: `rgba(${r}, ${g}, ${b}, 0.88)`,
+    slotBurst: `rgba(${r}, ${g}, ${b}, 0.74)`,
+    particle: `rgb(${particleRgb.r}, ${particleRgb.g}, ${particleRgb.b})`,
+    accentRgb: `${r}, ${g}, ${b}`,
+  };
+}
+
 function getBlockColorConfig(color) {
-  return BLOCK_COLOR_CONFIG[color] || BLOCK_COLOR_CONFIG.green;
+  const normalized = normalizeBlockColorName(color);
+  if (normalized && Object.prototype.hasOwnProperty.call(BLOCK_COLOR_CONFIG, normalized)) {
+    return BLOCK_COLOR_CONFIG[normalized];
+  }
+  if (normalized && Object.prototype.hasOwnProperty.call(BLOCK_COLOR_TO_RGB, normalized)) {
+    const derived = deriveBlockColorConfigFromRgb(BLOCK_COLOR_TO_RGB[normalized]);
+    BLOCK_COLOR_CONFIG[normalized] = derived;
+    return derived;
+  }
+  return BLOCK_COLOR_CONFIG.green;
 }
 
 function getPatternCellColor(cell) {
@@ -1635,11 +1703,87 @@ class CardManager {
     return layouts;
   }
 
-  distributeColors(cards, blocks) {
-    const colorCounts = blocks.reduce((acc, block) => {
+  buildColorCounts(blocks) {
+    return blocks.reduce((acc, block) => {
+      if (!block?.color) {
+        return acc;
+      }
       acc[block.color] = (acc[block.color] || 0) + 1;
       return acc;
     }, {});
+  }
+
+  getColorSample(color) {
+    const normalized = normalizeBlockColorName(color);
+    if (!normalized) {
+      return null;
+    }
+    if (Object.prototype.hasOwnProperty.call(BLOCK_COLOR_TO_RGB, normalized)) {
+      return BLOCK_COLOR_TO_RGB[normalized];
+    }
+    const alias = BLOCK_TILE_COLOR_ALIASES[normalized];
+    if (alias && Object.prototype.hasOwnProperty.call(BLOCK_COLOR_TO_RGB, alias)) {
+      return BLOCK_COLOR_TO_RGB[alias];
+    }
+    return null;
+  }
+
+  getNearestColorFromSet(color, candidates) {
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return "green";
+    }
+    const source = this.getColorSample(color);
+    if (!source) {
+      return candidates[0];
+    }
+    let bestColor = candidates[0];
+    let bestDistance = Infinity;
+    for (const candidate of candidates) {
+      const sample = this.getColorSample(candidate);
+      if (!sample) {
+        continue;
+      }
+      const dr = source.r - sample.r;
+      const dg = source.g - sample.g;
+      const db = source.b - sample.b;
+      const distanceSq = dr * dr + dg * dg + db * db;
+      if (distanceSq < bestDistance) {
+        bestDistance = distanceSq;
+        bestColor = candidate;
+      }
+    }
+    return bestColor;
+  }
+
+  remapBlocksToQueueCapacity(blocks, capacity) {
+    const maxColors = Math.max(1, Math.round(Number(capacity) || 1));
+    const initialCounts = this.buildColorCounts(blocks);
+    const colors = Object.keys(initialCounts).filter((color) => initialCounts[color] > 0);
+    if (colors.length <= maxColors) {
+      return initialCounts;
+    }
+    const keepColors = colors
+      .slice()
+      .sort((a, b) => {
+        const diff = (initialCounts[b] || 0) - (initialCounts[a] || 0);
+        if (diff !== 0) {
+          return diff;
+        }
+        return a.localeCompare(b);
+      })
+      .slice(0, maxColors);
+    const keepSet = new Set(keepColors);
+    for (const block of blocks) {
+      if (!block?.color || keepSet.has(block.color)) {
+        continue;
+      }
+      block.color = this.getNearestColorFromSet(block.color, keepColors);
+    }
+    return this.buildColorCounts(blocks);
+  }
+
+  distributeColors(cards, blocks) {
+    const colorCounts = this.remapBlocksToQueueCapacity(blocks, cards.length);
     const colors = Object.keys(colorCounts).filter((color) => colorCounts[color] > 0);
     if (cards.length === 0) {
       return colorCounts;
@@ -1981,7 +2125,7 @@ class Game {
     this.woodImage.src = "ui/wood.png";
     this.woodImage.decoding = "sync";
     this.slotCellImage = new Image();
-    this.slotCellImage.src = "ui/Rectangle 4686.png";
+    this.slotCellImage.src = "ui/slot_cell.png";
     this.slotCellImage.decoding = "sync";
     this.railwayImage = new Image();
     this.railwayImage.src = "ui/railway.png";
@@ -1998,6 +2142,7 @@ class Game {
     this.blockTileImageByColor = {};
     this.blockTileColorSampleByColor = {};
     this.blockTileUsesSourceImage = {};
+    this.chickenSpriteColorSampleByColor = {};
     this.debugBlockColorPalette = [];
     this.generatedBackdropCache = null;
 
@@ -2061,6 +2206,7 @@ class Game {
     this.remainingBlocks = 0;
     this.hoverHotspot = null;
     this.lastTimestamp = 0;
+    this.simAccumulator = 0;
     this.needsRender = true;
     this.isLoopRunning = false;
     this.unitIdCounter = 0;
@@ -2256,12 +2402,15 @@ class Game {
     this.sprites.yellowTile = this.sprites.yellowTile || this.sprites.greenTile;
     this.sprites.redTile = this.sprites.redTile || this.sprites.greenTile;
     this.sprites.chickenByColor = {};
-    for (const color of Object.keys(BLOCK_COLOR_CONFIG)) {
+    const chickenColors = new Set([
+      ...Object.keys(CHICKEN_SPRITE_SOURCE_BY_COLOR),
+      ...Object.keys(this.chickenSpriteImageByColor),
+    ]);
+    for (const color of chickenColors) {
       const imageSprite = this.chickenSpriteImageByColor[color];
-      this.sprites.chickenByColor[color] =
-        imageSprite && imageSprite.complete && imageSprite.naturalWidth > 0 && imageSprite.naturalHeight > 0
-          ? imageSprite
-          : this.createChickenSprite(color);
+      if (imageSprite && imageSprite.complete && imageSprite.naturalWidth > 0 && imageSprite.naturalHeight > 0) {
+        this.sprites.chickenByColor[color] = imageSprite;
+      }
     }
     this.sprites.holeTile = null;
     this.sprites.fieldGround = null;
@@ -2286,14 +2435,115 @@ class Game {
 
   initChickenSpriteImages() {
     for (const [color, src] of Object.entries(CHICKEN_SPRITE_SOURCE_BY_COLOR)) {
-      const image = new Image();
-      image.decoding = "sync";
-      image.src = src;
-      image.onload = () => {
-        this.sprites.chickenByColor[color] = image;
-        this.invalidate(false);
-      };
-      this.chickenSpriteImageByColor[color] = image;
+      this.registerChickenSpriteImageSource(color, src);
+    }
+    // For file:// sessions directory listing is often unavailable; probe by predictable color filenames.
+    for (const color of Object.keys(BLOCK_TILE_SOURCE_BY_COLOR)) {
+      this.registerChickenSpriteImageSource(color, `ui/birds/${color}.png`);
+    }
+    void this.discoverChickenSpriteSourcesFromUiDirectory();
+  }
+
+  registerChickenSpriteImageSource(color, src) {
+    const normalizedColor = String(color || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_");
+    const normalizedSrc = String(src || "").trim();
+    if (!normalizedColor || !normalizedSrc) {
+      return;
+    }
+    if (this.chickenSpriteImageByColor[normalizedColor]) {
+      return;
+    }
+    CHICKEN_SPRITE_SOURCE_BY_COLOR[normalizedColor] = normalizedSrc;
+    const image = new Image();
+    image.decoding = "sync";
+    image.src = normalizedSrc;
+    image.onload = () => {
+      try {
+        const sample = this.extractRepresentativeColorFromImage(image);
+        if (sample) {
+          this.chickenSpriteColorSampleByColor[normalizedColor] = sample;
+        }
+      } catch {
+        // On file://, reading pixels can throw SecurityError (tainted canvas).
+      }
+      this.buildReferenceAssets();
+      this.invalidate(false);
+    };
+    image.onerror = () => {
+      delete this.chickenSpriteColorSampleByColor[normalizedColor];
+    };
+    this.chickenSpriteImageByColor[normalizedColor] = image;
+  }
+
+  normalizeDiscoveredChickenColorKey(baseName) {
+    const normalized = String(baseName || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_")
+      .replace(/_+\d+$/, "")
+      .replace(/^chicken_+/, "")
+      .replace(/_+chicken$/, "")
+      .replace(/^bird_+/, "")
+      .replace(/_+bird$/, "");
+    if (!normalized || normalized === "chicken" || normalized === "bird") {
+      return null;
+    }
+    return normalized;
+  }
+
+  async discoverChickenSpriteSourcesFromUiDirectory() {
+    if (typeof fetch !== "function") {
+      return;
+    }
+    let response;
+    try {
+      response = await fetch("ui/birds/", { cache: "no-store" });
+    } catch {
+      return;
+    }
+    if (!response?.ok) {
+      return;
+    }
+    let html = "";
+    try {
+      html = await response.text();
+    } catch {
+      return;
+    }
+    if (!html || typeof html !== "string") {
+      return;
+    }
+    const hrefMatches = [...html.matchAll(/href\s*=\s*["']([^"']+?\.png(?:\?[^"']*)?)["']/gi)];
+    if (hrefMatches.length === 0) {
+      return;
+    }
+    for (const match of hrefMatches) {
+      const rawHref = String(match[1] || "").trim();
+      if (!rawHref) {
+        continue;
+      }
+      const decodedHref = decodeURIComponent(rawHref.split("?")[0].split("#")[0]);
+      const fileName = decodedHref.split("/").filter(Boolean).pop() || "";
+      if (!fileName.toLowerCase().endsWith(".png")) {
+        continue;
+      }
+      const baseName = fileName.slice(0, -4).trim().toLowerCase();
+      const colorKey = baseName
+        .replace(/[\s-]+/g, "_")
+        .replace(/_alt(?:_\d+)?$/, "");
+      if (!colorKey || !/^[a-z0-9_]+$/.test(colorKey)) {
+        continue;
+      }
+      if (baseName.includes("legacy") || baseName.includes("backup")) {
+        continue;
+      }
+      if (Object.prototype.hasOwnProperty.call(CHICKEN_SPRITE_SOURCE_BY_COLOR, colorKey)) {
+        continue;
+      }
+      this.registerChickenSpriteImageSource(colorKey, `ui/birds/${fileName}`);
     }
   }
 
@@ -2347,7 +2597,7 @@ class Game {
     }
     let response;
     try {
-      response = await fetch("ui/", { cache: "no-store" });
+      response = await fetch("ui/blocks/", { cache: "no-store" });
     } catch {
       return;
     }
@@ -2367,29 +2617,6 @@ class Game {
     if (hrefMatches.length === 0) {
       return;
     }
-    const blockedTokens = [
-      "chicken",
-      "button",
-      "popup",
-      "booster",
-      "background",
-      "overlay",
-      "railway",
-      "wood",
-      "bg",
-      "coin",
-      "number",
-      "lock",
-      "timer",
-      "rectangle",
-      "loose",
-      "lose",
-      "greenmon",
-      "inactive",
-      "restart",
-      "back",
-    ];
-
     for (const match of hrefMatches) {
       const rawHref = String(match[1] || "").trim();
       if (!rawHref) {
@@ -2401,17 +2628,16 @@ class Game {
         continue;
       }
       const baseName = fileName.slice(0, -4).trim().toLowerCase();
-      const colorKey = baseName.replace(/[\s-]+/g, "_");
+      const colorKey = baseName
+        .replace(/[\s-]+/g, "_")
+        .replace(/^tile_+/, "");
       if (!/^[a-z0-9_]+$/.test(colorKey)) {
-        continue;
-      }
-      if (blockedTokens.some((token) => colorKey.includes(token))) {
         continue;
       }
       if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, colorKey)) {
         continue;
       }
-      this.registerBlockTileImageSource(colorKey, `ui/${fileName}`);
+      this.registerBlockTileImageSource(colorKey, `ui/blocks/${fileName}`);
     }
   }
 
@@ -2553,6 +2779,89 @@ class Game {
     return bestColor;
   }
 
+  getColorSampleForColorKey(color) {
+    const normalized = normalizeBlockColorName(color);
+    if (!normalized) {
+      return null;
+    }
+    const direct =
+      this.blockTileColorSampleByColor[normalized]
+      || this.chickenSpriteColorSampleByColor[normalized]
+      || BLOCK_COLOR_TO_RGB[normalized];
+    if (direct) {
+      return direct;
+    }
+    const alias = BLOCK_TILE_COLOR_ALIASES[normalized];
+    if (alias) {
+      const aliasSample =
+        this.blockTileColorSampleByColor[alias]
+        || this.chickenSpriteColorSampleByColor[alias]
+        || BLOCK_COLOR_TO_RGB[alias];
+      if (aliasSample) {
+        return aliasSample;
+      }
+    }
+    // Name-based fallback so unknown shades don't flash green before PNG finishes loading.
+    if (normalized.includes("pink") || normalized.includes("малинов")) {
+      return BLOCK_COLOR_TO_RGB.pink || BLOCK_COLOR_TO_RGB.dark_pink || null;
+    }
+    if (normalized.includes("purple") || normalized.includes("violet") || normalized.includes("levender") || normalized.includes("lavender")) {
+      return BLOCK_COLOR_TO_RGB.light_purple || BLOCK_COLOR_TO_RGB.dark_purple || null;
+    }
+    if (normalized.includes("blue")) {
+      return BLOCK_COLOR_TO_RGB.dark_blue || BLOCK_COLOR_TO_RGB.blue || null;
+    }
+    if (normalized.includes("green")) {
+      return BLOCK_COLOR_TO_RGB.light_green || BLOCK_COLOR_TO_RGB.green || null;
+    }
+    if (normalized.includes("beige") || normalized.includes("peach")) {
+      return BLOCK_COLOR_TO_RGB.peach || null;
+    }
+    if (normalized.includes("gray") || normalized.includes("grey")) {
+      return BLOCK_COLOR_TO_RGB.gray || null;
+    }
+    return null;
+  }
+
+  getNearestColorKeyFromSample(targetSample, colorKeys, sampleByColor) {
+    if (!targetSample || !Array.isArray(colorKeys) || colorKeys.length === 0 || !sampleByColor) {
+      return null;
+    }
+    const targetLab = rgbToLab(targetSample.r, targetSample.g, targetSample.b);
+    let bestKey = null;
+    let bestDistance = Infinity;
+    for (const key of colorKeys) {
+      const sample = sampleByColor[key];
+      if (!sample) {
+        continue;
+      }
+      const sampleLab = rgbToLab(sample.r, sample.g, sample.b);
+      const dL = targetLab.l - sampleLab.l;
+      const dA = targetLab.a - sampleLab.a;
+      const dB = targetLab.b - sampleLab.b;
+      const distanceSq = dL * dL + dA * dA + dB * dB;
+      if (distanceSq < bestDistance) {
+        bestDistance = distanceSq;
+        bestKey = key;
+      }
+    }
+    return bestKey;
+  }
+
+  getAvailableLoadedBlockTileColorKeys() {
+    return Object.keys(this.blockTileImageByColor).filter((key) => {
+      const image = this.blockTileImageByColor[key];
+      return !!(image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+    });
+  }
+
+  getAvailableLoadedChickenColorKeys() {
+    return Object.keys(this.chickenSpriteImageByColor).filter((key) => {
+      const image = this.chickenSpriteImageByColor[key];
+      return !!(image && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+    });
+  }
+
   pickSampledBlockColor(r, g, b, a) {
     if (a < 56) {
       return null;
@@ -2563,17 +2872,58 @@ class Game {
 
   resolveBlockTileColorKey(color) {
     const normalized = String(color || "").trim().toLowerCase();
-    if (!normalized) {
+    const requestedColor = normalizeBlockColorName(normalized);
+    if (!requestedColor) {
       return null;
     }
-    if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, normalized)) {
-      return normalized;
+    if (Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, requestedColor)) {
+      return requestedColor;
     }
-    const alias = BLOCK_TILE_COLOR_ALIASES[normalized];
+    const alias = BLOCK_TILE_COLOR_ALIASES[requestedColor];
     if (alias && Object.prototype.hasOwnProperty.call(BLOCK_TILE_SOURCE_BY_COLOR, alias)) {
       return alias;
     }
+    const loadedKeys = this.getAvailableLoadedBlockTileColorKeys();
+    const nearest = this.getNearestColorKeyFromSample(
+      this.getColorSampleForColorKey(requestedColor),
+      loadedKeys,
+      this.blockTileColorSampleByColor
+    );
+    if (nearest) {
+      return nearest;
+    }
+    if (loadedKeys.length > 0) {
+      return loadedKeys[0];
+    }
     return null;
+  }
+
+  resolveChickenSpriteColorKey(color) {
+    const normalized = String(color || "").trim().toLowerCase();
+    const requestedColor = normalizeBlockColorName(normalized);
+    const loadedKeys = this.getAvailableLoadedChickenColorKeys();
+    if (loadedKeys.length === 0) {
+      return null;
+    }
+    if (!requestedColor) {
+      return loadedKeys[0];
+    }
+    const alias = BLOCK_TILE_COLOR_ALIASES[requestedColor];
+    const directCandidates = [requestedColor, alias].filter(Boolean);
+    for (const key of directCandidates) {
+      if (loadedKeys.includes(key)) {
+        return key;
+      }
+    }
+    const nearest = this.getNearestColorKeyFromSample(
+      this.getColorSampleForColorKey(requestedColor),
+      loadedKeys,
+      this.chickenSpriteColorSampleByColor
+    );
+    if (nearest) {
+      return nearest;
+    }
+    return loadedKeys[0];
   }
 
   getLoadedBlockTileImage(color) {
@@ -2586,6 +2936,34 @@ class Game {
       return null;
     }
     return image;
+  }
+
+  getBlockSpritePalette(color) {
+    if (Object.prototype.hasOwnProperty.call(BLOCK_COLOR_CONFIG, color)) {
+      return getBlockColorConfig(color).sprite;
+    }
+    const sample = this.getColorSampleForColorKey(color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
+    const toRgb = (mul) => ({
+      r: clamp(Math.round(sample.r * mul), 0, 255),
+      g: clamp(Math.round(sample.g * mul), 0, 255),
+      b: clamp(Math.round(sample.b * mul), 0, 255),
+    });
+    const base = toRgb(1.06);
+    const mid = toRgb(0.95);
+    const dark = toRgb(0.74);
+    return {
+      base: `rgb(${base.r}, ${base.g}, ${base.b})`,
+      mid: `rgb(${mid.r}, ${mid.g}, ${mid.b})`,
+      dark: `rgb(${dark.r}, ${dark.g}, ${dark.b})`,
+    };
+  }
+
+  getBlockFaceColor(color) {
+    if (Object.prototype.hasOwnProperty.call(BLOCK_COLOR_CONFIG, color)) {
+      return getBlockColorConfig(color).face;
+    }
+    const sample = this.getColorSampleForColorKey(color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
+    return `rgb(${sample.r}, ${sample.g}, ${sample.b})`;
   }
 
   createBlockSprite(color) {
@@ -2605,7 +2983,7 @@ class Game {
       tileCtx.drawImage(sourceImage, 0, 0, size, size);
       return tile;
     }
-    const palette = getBlockColorConfig(color).sprite;
+    const palette = this.getBlockSpritePalette(color);
     const template = this.blockTemplateImage;
     if (template && template.complete && template.naturalWidth > 0 && template.naturalHeight > 0) {
       const baseRgb = hexToRgb(palette.base);
@@ -2666,8 +3044,29 @@ class Game {
     return tile;
   }
 
+  getChickenSpritePalette(color) {
+    const config = BLOCK_COLOR_CONFIG[color];
+    if (config?.sprite) {
+      return config.sprite;
+    }
+    const sample = this.getColorSampleForColorKey(color) || BLOCK_COLOR_TO_RGB.green || { r: 129, g: 195, b: 65 };
+    const toRgb = (mul) => ({
+      r: clamp(Math.round(sample.r * mul), 0, 255),
+      g: clamp(Math.round(sample.g * mul), 0, 255),
+      b: clamp(Math.round(sample.b * mul), 0, 255),
+    });
+    const base = toRgb(1.06);
+    const mid = toRgb(0.95);
+    const dark = toRgb(0.74);
+    return {
+      base: `rgb(${base.r}, ${base.g}, ${base.b})`,
+      mid: `rgb(${mid.r}, ${mid.g}, ${mid.b})`,
+      dark: `rgb(${dark.r}, ${dark.g}, ${dark.b})`,
+    };
+  }
+
   createChickenSprite(color) {
-    const palette = getBlockColorConfig(color).sprite;
+    const palette = this.getChickenSpritePalette(color);
     const width = 220;
     const height = 220;
     const canvas = document.createElement("canvas");
@@ -3943,7 +4342,7 @@ class Game {
     }
     if (this.debugSaveLevelNameInput) {
       const currentName = String(this.debugSaveLevelNameInput.value || "").trim();
-      const isGeneric = /^level\s+\d+$/i.test(currentName);
+      const isGeneric = /^level\s+\d+$/i.test(currentName) || /^generated\b/i.test(currentName);
       if (!currentName || isGeneric) {
         this.debugSaveLevelNameInput.value = `Level ${numericId}`;
       }
@@ -4237,6 +4636,7 @@ class Game {
 
   normalizeShooterQueues(cards) {
     this.cards = this.cardManager.normalizeQueues(cards);
+    this.ensurePlayableFrontQueueColor();
     return this.cards;
   }
 
@@ -4316,6 +4716,42 @@ class Game {
       }
     }
     this.cards = this.normalizeShooterQueues(this.cards);
+  }
+
+  ensurePlayableFrontQueueColor() {
+    if (this.gameState !== "playing") {
+      return false;
+    }
+    if (this.isLevelOneTutorialEnabled()) {
+      return false;
+    }
+    const target = this.getNextSpiralTarget();
+    if (!target?.color) {
+      return false;
+    }
+    const targetColor = target.color;
+    const frontCards = this.getFrontLaneIds()
+      .map((lane) => this.getActiveFrontCardInLane(lane))
+      .filter((card) => !!card && !card.used && card.ammo > 0);
+    if (frontCards.length === 0) {
+      return false;
+    }
+    if (frontCards.some((card) => card.color === targetColor)) {
+      return false;
+    }
+    const donor = this.cards.find(
+      (card) => !card.used && card.ammo > 0 && card.color === targetColor && !frontCards.includes(card)
+    );
+    if (!donor) {
+      return false;
+    }
+    const receiver = frontCards.find((card) => card.color !== targetColor) || frontCards[0];
+    if (!receiver || receiver === donor) {
+      return false;
+    }
+    this.swapCardPayload(receiver, donor);
+    this.cards = this.cardManager.normalizeQueues(this.cards);
+    return true;
   }
 
   setupLevelOneTutorial() {
@@ -5047,6 +5483,11 @@ class Game {
       return;
     }
 
+    const currentTarget = this.getNextSpiralTarget();
+    if (!currentTarget || currentTarget.id !== block.id) {
+      return;
+    }
+
     block.alive = true;
     block.hitFlash = 1;
     this.remainingBlocks -= 1;
@@ -5373,6 +5814,10 @@ class Game {
       }
     }
 
+    if (this.ensurePlayableFrontQueueColor()) {
+      this.needsRender = true;
+    }
+
     for (const block of this.blocks) {
       block.update(dt);
     }
@@ -5594,10 +6039,10 @@ class Game {
   drawVolumetricBlock(ctx, block, x, y, options = {}) {
     const size = block.size;
     const spriteKey = `${block.color}Tile`;
-    const sprite = this.sprites[spriteKey] || this.sprites.greenTile;
+    const sprite = this.sprites[spriteKey] || null;
     const resolvedTileColor = this.resolveBlockTileColorKey(block.color);
     const usesSourceSprite = !!(resolvedTileColor && this.blockTileUsesSourceImage[resolvedTileColor]);
-    const baseColor = getBlockColorConfig(block.color).face;
+    const baseColor = this.getBlockFaceColor(block.color);
     const alpha = options.alpha ?? 1;
     const shadowOpacity = options.shadowOpacity ?? 0.24;
     const bevelStrength = options.bevelStrength ?? 0.28;
@@ -5703,7 +6148,8 @@ class Game {
       }
       ctx.save();
       ctx.globalAlpha = block.hitFlash * 0.25;
-      ctx.fillStyle = "#ffffff";
+      const flashRgb = this.getColorSampleForColorKey(block.color) || BLOCK_COLOR_TO_RGB.green;
+      ctx.fillStyle = `rgb(${flashRgb.r}, ${flashRgb.g}, ${flashRgb.b})`;
       const waveOffsetY = this.getBlockWaveOffsetY(block);
       roundedRect(ctx, block.x, block.y + waveOffsetY, block.size, block.size, 8);
       ctx.fill();
@@ -5747,43 +6193,36 @@ class Game {
       const distanceFromWave = Math.abs(index - waveHead);
       const pulseSpike = Math.exp(-(distanceFromWave * distanceFromWave) / Math.max(0.01, waveWidth));
       const pulse = clamp(0.08 + 0.92 * pulseSpike, 0, 1);
-      const colorRgb = BLOCK_COLOR_TO_RGB[target.color] || BLOCK_COLOR_TO_RGB.green;
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const pulseScale = 1 + 0.1 * pulse;
-      const glowOuterR = Math.max(target.size * (1.3 + pulse * 0.35), 14 + pulse * 12);
-      const glowInnerR = Math.max(target.size * 0.32, 4);
+      const pulseScale = 1 + 0.12 * pulse;
 
       ctx.save();
-      const halo = ctx.createRadialGradient(centerX, centerY, glowInnerR, centerX, centerY, glowOuterR);
-      halo.addColorStop(0, `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, ${0.34 + pulse * 0.24})`);
-      halo.addColorStop(0.52, `rgba(${colorRgb.r}, ${colorRgb.g}, ${colorRgb.b}, ${0.2 + pulse * 0.18})`);
-      halo.addColorStop(1, "rgba(255, 255, 255, 0)");
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(centerX, centerY, glowOuterR, 0, Math.PI * 2);
-      ctx.fill();
-
       ctx.translate(centerX, centerY);
       ctx.scale(pulseScale, pulseScale);
       ctx.translate(-centerX, -centerY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
-        alpha: 0.88 + 0.12 * pulse,
-        shadowOpacity: 0.28 + 0.09 * pulse,
-        bevelStrength: 0.34 + 0.11 * pulse,
+        alpha: 0.9 + 0.1 * pulse,
+        shadowOpacity: 0.24 + 0.06 * pulse,
+        bevelStrength: 0.24 + 0.06 * pulse,
       });
 
-      ctx.globalAlpha = 0.86 + 0.12 * pulse;
-      ctx.lineWidth = 2.8 + 1.4 * pulse;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.98)";
-      roundedRect(ctx, target.x + 2, target.y + 2, target.size - 4, target.size - 4, 7);
-      ctx.stroke();
-
-      ctx.globalAlpha = 0.58 + 0.2 * pulse;
-      ctx.lineWidth = 1.9 + 1.05 * pulse;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.72)";
-      roundedRect(ctx, target.x - 1, target.y - 1, target.size + 2, target.size + 2, 8);
-      ctx.stroke();
+      // Wave-like white gloss sweep over each target block.
+      ctx.save();
+      roundedRect(ctx, target.x + 0.5, target.y + 0.5, target.size - 1, target.size - 1, 8);
+      ctx.clip();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(-Math.PI * 0.22);
+      const sheenW = Math.max(6, target.size * (0.26 + pulse * 0.12));
+      const sheenH = target.size * 1.8;
+      const sheenGradient = ctx.createLinearGradient(-sheenW * 0.5, 0, sheenW * 0.5, 0);
+      sheenGradient.addColorStop(0, "rgba(255, 255, 255, 0)");
+      sheenGradient.addColorStop(0.5, "rgba(255, 255, 255, 0.95)");
+      sheenGradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.globalAlpha = 0.06 + 0.82 * pulse;
+      ctx.fillStyle = sheenGradient;
+      ctx.fillRect(-sheenW * 0.5, -sheenH * 0.5, sheenW, sheenH);
+      ctx.restore();
       ctx.restore();
     }
   }
@@ -5944,7 +6383,7 @@ class Game {
   }
 
   drawChickenSprite(ctx, centerX, centerY, color, ammo, options = {}) {
-    const colorKey = color && BLOCK_COLOR_CONFIG[color] ? color : "green";
+    const colorKey = this.resolveChickenSpriteColorKey(color);
     const sprite = this.sprites.chickenByColor?.[colorKey];
     if (!sprite || !sprite.width || !sprite.height) {
       return false;
@@ -6132,7 +6571,7 @@ class Game {
         const x = LAYOUT.fieldX + col * LAYOUT.fieldStep;
         const y = LAYOUT.fieldY + row * LAYOUT.fieldStep;
         if (color) {
-          const sprite = this.sprites[`${color}Tile`] || this.sprites.greenTile;
+          const sprite = this.sprites[`${color}Tile`] || null;
           if (sprite) {
             ctx.globalAlpha = 1;
             ctx.drawImage(sprite, x, y, LAYOUT.cellSize, LAYOUT.cellSize);
@@ -6163,7 +6602,7 @@ class Game {
       const fade = projectile.maxLife > 0 ? projectile.life / projectile.maxLife : 0;
       const progress = easeOutCubic(1 - fade);
       const blockSize = LAYOUT.cellSize * 0.78;
-      const blockSprite = this.sprites[`${projectile.color}Tile`] || this.sprites.greenTile;
+      const blockSprite = this.sprites[`${projectile.color}Tile`] || null;
       const dx = projectile.toX - projectile.fromX;
       const dy = projectile.toY - projectile.fromY;
       const dist = Math.max(1, Math.hypot(dx, dy));
@@ -6879,12 +7318,25 @@ class Game {
       return;
     }
 
-    const dt = clamp((timestamp - this.lastTimestamp) / 1000, 0, 0.05);
+    const dt = clamp((timestamp - this.lastTimestamp) / 1000, 0, MAX_SIMULATION_DT);
     this.lastTimestamp = timestamp;
-    const animating = this.hasActiveAnimations();
+    let animating = this.hasActiveAnimations();
 
     if (animating) {
-      this.update(dt);
+      this.simAccumulator = Math.min(MAX_SIMULATION_DT, this.simAccumulator + dt);
+      let steps = 0;
+      const maxSteps = 12;
+      while (this.simAccumulator >= FIXED_DT && steps < maxSteps) {
+        this.update(FIXED_DT);
+        this.simAccumulator -= FIXED_DT;
+        steps += 1;
+      }
+      if (steps >= maxSteps) {
+        this.simAccumulator = 0;
+      }
+      animating = this.hasActiveAnimations();
+    } else {
+      this.simAccumulator = 0;
     }
 
     if (this.needsRender || animating) {
@@ -6935,6 +7387,7 @@ class Game {
       if (!this.isLoopRunning) {
         this.isLoopRunning = true;
         this.lastTimestamp = performance.now();
+        this.simAccumulator = 0;
         requestAnimationFrame((t) => this.frame(t));
       }
     } else {
@@ -7612,9 +8065,11 @@ class Game {
     const fieldX = Math.round(centerX - fieldWidth * 0.5);
     const fieldY = Math.round(centerY - fieldHeight * 0.5 + offsetY);
     const pattern = colorMatrix.map((row) => row.map((cell) => getPatternCellChar(cell)).join(""));
+    const levelNumber = this.normalizeDebugLevelNumber(metadata.levelNumber, this.getSuggestedExportLevelNumber());
+    const levelName = String(metadata.levelName || `Level ${levelNumber}`).trim() || `Level ${levelNumber}`;
 
     level.id = DEBUG_IMAGE_LEVEL_ID;
-    level.name = `Generated ${cols}x${rows}`;
+    level.name = levelName;
     level.fallbackFieldPattern = pattern;
     level.pixelArt = {
       id: DEBUG_IMAGE_LEVEL_ID,
@@ -7651,6 +8106,8 @@ class Game {
     const { cols, rows } = this.getDebugImageGridSize();
     const imageScale = this.getDebugImageScale();
     const offsetY = this.getDebugImageOffsetY();
+    const levelNumber = this.getDebugSaveLevelNumber(this.getSuggestedExportLevelNumber());
+    const levelName = this.getDebugSaveLevelName(levelNumber);
     const { colorMatrix, colorCounts, filledCells } = this.sampleDebugImageToMatrix(this.debugGeneratedSourceImage.image, cols, rows);
 
     if (filledCells <= 0) {
@@ -7662,6 +8119,8 @@ class Game {
       fileName: this.debugGeneratedSourceImage.fileName,
       imageScale,
       offsetY,
+      levelNumber,
+      levelName,
     });
     const colorSummary = Object.keys(colorCounts)
       .map((color) => `${BLOCK_COLOR_LABELS[color] || color}: ${colorCounts[color]}`)
@@ -7673,7 +8132,7 @@ class Game {
     this.applyLevelConfig(level.id, { restart: true });
     this.syncDebugContentSelectors();
     this.setDebugImageStatus(
-      `Собран уровень ${cols}x${rows} с размером ${imageScale.toFixed(2)}x и Y ${offsetY}. Блоков: ${filledCells}. ${colorSummary}`,
+      `Собран ${levelName} (${cols}x${rows}) с размером ${imageScale.toFixed(2)}x и Y ${offsetY}. Блоков: ${filledCells}. ${colorSummary}`,
       "success"
     );
     return true;
