@@ -297,6 +297,7 @@ body {
 #debugImageLevelToggle,
 #debugImageCreate,
 #debugImageRefresh,
+#debugSaveCurrentLevelName,
 #debugSaveCurrentLevel,
 #debugSaveTargetLevel,
 #debugPickLevelsFolder {
@@ -317,6 +318,7 @@ body {
 #debugImageLevelToggle:active,
 #debugImageCreate:active,
 #debugImageRefresh:active,
+#debugSaveCurrentLevelName:active,
 #debugSaveCurrentLevel:active,
 #debugSaveTargetLevel:active,
 #debugPickLevelsFolder:active {

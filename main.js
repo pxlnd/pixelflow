@@ -2335,6 +2335,8 @@ class Game {
     this.debugImageLevelSection = document.getElementById("debugImageLevelSection");
     this.debugLevelSelect = document.getElementById("debugLevelSelect");
     this.debugThemeSelect = document.getElementById("debugThemeSelect");
+    this.debugCurrentLevelNameInput = document.getElementById("debugCurrentLevelName");
+    this.debugSaveCurrentLevelNameButton = document.getElementById("debugSaveCurrentLevelName");
     this.debugLevelTopNav = document.querySelector(".debug-level-nav");
     this.debugLevelTopNavToggle = document.getElementById("debugLevelTopNavToggle");
     this.debugLevelPrevTopButton = document.getElementById("debugLevelPrevTop");
@@ -7775,6 +7777,7 @@ class Game {
     if (this.debugThemeSelect) {
       this.debugThemeSelect.value = this.getValidThemeId(this.currentThemeId);
     }
+    this.syncDebugCurrentLevelNameInput();
     this.updateTopLevelDebugNav();
     this.syncDebugSaveTargetInputs(this.currentLevelId);
   }
@@ -7804,8 +7807,56 @@ class Game {
     this.refreshAvailableLevels();
     fillSelect(this.debugLevelSelect, this.availableLevels, this.getValidLevelId(this.currentLevelId));
     fillSelect(this.debugThemeSelect, this.availableThemes, this.getValidThemeId(this.currentThemeId));
+    this.syncDebugCurrentLevelNameInput();
     this.updateTopLevelDebugNav();
     this.syncDebugSaveTargetInputs(this.currentLevelId);
+  }
+
+  syncDebugCurrentLevelNameInput() {
+    if (!this.debugCurrentLevelNameInput) {
+      return;
+    }
+    const levelName = String(CURRENT_LEVEL?.name || "").trim();
+    this.debugCurrentLevelNameInput.value = levelName.length > 0
+      ? levelName
+      : `Level ${this.getValidLevelId(this.currentLevelId)}`;
+  }
+
+  async saveCurrentLevelNameFromDebug() {
+    const levelId = this.getValidLevelId(this.currentLevelId);
+    const rawName = String(this.debugCurrentLevelNameInput?.value || "").trim();
+    const levelNumber = this.normalizeDebugLevelNumber(levelId, this.getSuggestedExportLevelNumber());
+    const nextName = rawName.length > 0 ? rawName : `Level ${levelNumber}`;
+    if (this.debugCurrentLevelNameInput) {
+      this.debugCurrentLevelNameInput.value = nextName;
+    }
+
+    const updatedLevel = cloneData(CURRENT_LEVEL);
+    updatedLevel.id = levelId;
+    updatedLevel.name = nextName;
+
+    syncLevelGlobals(updatedLevel);
+    upsertLevelDefinition(updatedLevel);
+    const persistedLocally = persistLevelOverride(updatedLevel);
+
+    this.fillDebugContentSelectors();
+    this.syncDebugContentSelectors();
+    this.invalidate(false);
+
+    if (this.debugSaveCurrentLevelNameButton) {
+      const original = this.debugSaveCurrentLevelNameButton.textContent;
+      this.debugSaveCurrentLevelNameButton.textContent = "сохранено";
+      setTimeout(() => {
+        if (this.debugSaveCurrentLevelNameButton) {
+          this.debugSaveCurrentLevelNameButton.textContent = original || "сохранить имя";
+        }
+      }, 1200);
+    }
+
+    this.setDebugImageStatus(
+      `Имя уровня ${levelNumber} обновлено на "${nextName}"${persistedLocally ? " и закреплено после перезагрузки." : "."}`,
+      "success"
+    );
   }
 
   getTopLevelDebugList() {
@@ -7881,6 +7932,23 @@ class Game {
         this.applyThemeConfig(this.debugThemeSelect.value, { restart: true });
         this.syncDebugContentSelectors();
         this.saveDebugSettings();
+      });
+    }
+
+    if (this.debugCurrentLevelNameInput) {
+      this.debugCurrentLevelNameInput.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") {
+          return;
+        }
+        void this.saveCurrentLevelNameFromDebug();
+        event.preventDefault();
+      });
+    }
+
+    if (this.debugSaveCurrentLevelNameButton) {
+      this.debugSaveCurrentLevelNameButton.addEventListener("click", (event) => {
+        void this.saveCurrentLevelNameFromDebug();
+        event.preventDefault();
       });
     }
 
