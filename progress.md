@@ -1,5 +1,33 @@
 Original prompt: Твоя задача: создать полностью рабочий мини-клон мобильной 2D puzzle-game по приложенному референс-скриншоту. Нужен один локально запускаемый HTML/CSS/JS vertical slice с уровнем, конвейером, автоатакой, победой и restart.
 
+- 2026-04-04: restricted rail shooting to the unit's current side/corner of the active build contour.
+- `main.js`: added `getTrackRegionForPoint()` and contour-region tagging for active targets, then filtered `findTargetOnLine()` so straight segments shoot only same-side targets and corner arcs shoot only matching corner targets.
+- Added a narrow fallback for fully degenerate `1x1` active contour (`targetTags: ["all"]`) so the final center cell still remains finishable instead of deadlocking.
+- Follow-up fix after regression report: straight-side travel (`top/right/bottom/left`) now still accepts corner targets on that same side; only the actual corner rail positions stay corner-exclusive. This fixes the case where a bird filled the first cross, then incorrectly parked while the next black ghost blocks were diagonals on the matching side.
+- Verification:
+- `node --check main.js`
+- required `develop-web-game` client rerun: `output/web-game/target-side-client-final/state-0.json`, `errors-0.json`
+- direct Playwright verification: `output/web-game/target-side-verify/results.json`, `shot.png`
+- Result: recorded live shots only on matching regions (`bottom: 2, right: 1, top: 1, left: 1`), `mismatches: 0`, `remainingBlocks: 441 -> 436`.
+- Regression verification:
+- direct Playwright debug replay: `output/web-game/black-stop-debug.json`
+- Result: black unit no longer parks after the first 5 shots; the same replay now continues to 43 black shots total, unit remains `state: "moving"`, and the remaining active targets are already green-only.
+- 2026-04-04: follow-up fix for intermittent same-side misses and level-2 late stalls.
+- Root cause: runtime firing still depended on the exact sampled rail point lining up with a target column/row. With side-restricted targeting this could miss a valid top/left/right/bottom target on the current pass and only hit it on a later lap; on denser boards it could also make some contours feel non-shootable.
+- Fix: kept the existing precise line-hit path as primary behavior, but added `findTargetOnCurrentRegion()` fallback in `main.js`. If the current sampled point has no direct line hit, the bird now still acquires the nearest valid target on its current rail side/region, using the same side restriction and real track-window checks.
+- Verification:
+- `node --check main.js`
+- level 2 targetability probe: `output/web-game/level2-debug.json`
+- level 2 autoplay smoke: `output/web-game/level2-autoplay/results.json`, `shot.png`
+- Result: level 2 initial red target remains reachable (`hasTargetForColor: true`, 20 sampled hits on track), and autoplay now makes visible progress (`remainingBlocks: 625 -> 545`) instead of a no-shot stall.
+- 2026-04-04: cadence tightened after user report that birds were instantly dumping an entire side.
+- Root cause: even after side-restricted targeting, `Unit.update()` could still chain targets too aggressively across consecutive samples, and `FIRE_INTERVAL` was low enough that the side filled almost instantly.
+- Fix: limited runtime firing to a single resolved target per update sweep and increased `FIRE_INTERVAL` in `main.js` from `0.02` to `0.08`, so filling now reads as stepwise layering instead of a single burst.
+- Verification:
+- `node --check main.js`
+- cadence smoke: `output/web-game/shot-cadence-check/results.json`
+- Result: level 1 same-side pass slowed from the prior near-burst behavior to 31 shots over the 3s probe window (`remainingBlocks: 441 -> 410`) instead of the previous more aggressive side dump.
+
 - 2026-04-03: swapped level order so the Minecraft creeper face is now level 1 and the previous level 1 moved to level 8.
 - Kept the tutorial behavior intact by moving the level data instead of touching tutorial logic; tutorial remains bound to `levelId === "1"`, so it now runs on the creeper level automatically.
 - Verification: `game-data/levels/1.json` now contains the creeper pattern, `game-data/levels/8.json` contains the old first level pattern, and `main.js` still uses `LEVEL_ONE_TUTORIAL_ID = "1"`.

@@ -286,7 +286,7 @@ const LOGICAL_WIDTH = 1024;
 const LOGICAL_HEIGHT = 1600;
 const FIXED_DT = 1 / 60;
 const MAX_ACTIVE_UNITS = 5;
-const FIRE_INTERVAL = 0.02;
+const FIRE_INTERVAL = 0.03;
 const MAX_BURST_SHOTS_PER_TICK = 24;
 const BULLET_RADIUS = 8;
 const SHOT_TRAIL_DURATION = 0.16;
@@ -1513,6 +1513,8 @@ class Unit {
     this.parkBounce = 0;
     this.shotBounceTime = SHOT_BOUNCE_DURATION;
     this.renderRotation = null;
+    this.currentTrackRegion = null;
+    this.regionFrontierLock = null;
     this.alive = true;
   }
 
@@ -1548,6 +1550,8 @@ class Unit {
         this.state = "moving";
         this.position = this.conveyor.pointAtDistance(this.distanceOnTrack);
         this.prevPosition = { ...this.position };
+        this.currentTrackRegion = null;
+        this.regionFrontierLock = null;
         this.renderRotation = game.getTrackSideFacingAngle(this.position);
         game.normalizeShooterQueues(game.cards);
       }
@@ -1639,7 +1643,7 @@ class Unit {
       const sweepStart = this.prevPosition ? { ...this.prevPosition } : { ...this.position };
       const sweepEnd = this.position ? { ...this.position } : { ...sweepStart };
       const sweepDistance = Math.hypot(sweepEnd.x - sweepStart.x, sweepEnd.y - sweepStart.y);
-      const sampleStep = Math.max(3, LAYOUT.cellSize * 0.45);
+      const sampleStep = Math.max(1, LAYOUT.cellSize * 0.12);
       const sampleCount = Math.max(1, Math.ceil(sweepDistance / sampleStep));
 
       for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
@@ -1655,15 +1659,21 @@ class Unit {
         if (!shootDirection) {
           continue;
         }
-        while (this.ammo > 0 && shotsFired < MAX_BURST_SHOTS_PER_TICK) {
-          const target = game.findTargetOnLine(samplePoint, this.color, shootDirection);
-          if (!target) {
-            break;
-          }
-          this.ammo -= 1;
-          game.fireProjectile(this, target);
-          shotsFired += 1;
+        const sampleRegion = game.getTrackRegionForPoint(samplePoint);
+        if (sampleRegion !== this.currentTrackRegion) {
+          this.currentTrackRegion = sampleRegion;
+          this.regionFrontierLock = game.getTrackRegionFrontierLock(sampleRegion);
         }
+        const target = game.findTargetOnLine(samplePoint, this.color, shootDirection, {
+          frontierLock: this.regionFrontierLock,
+        });
+        if (!target) {
+          continue;
+        }
+        this.ammo -= 1;
+        game.fireProjectile(this, target);
+        shotsFired += 1;
+        break;
       }
 
       if (shotsFired > 0) {
@@ -5419,6 +5429,45 @@ class Game {
     return Math.PI * 0.5 + CHICKEN_FRONT_ANGLE_OFFSET;
   }
 
+  getTrackRegionForPoint(point) {
+    const trackRect = this.conveyor?.trackRect;
+    if (!trackRect || !point) {
+      return null;
+    }
+    const left = trackRect.x;
+    const right = trackRect.x + trackRect.w;
+    const top = trackRect.y;
+    const bottom = trackRect.y + trackRect.h;
+    const radius = Math.max(0, Number(trackRect.r) || 0);
+    const epsilon = Math.max(2, LAYOUT.cellSize * 0.18);
+    const inLeftCornerBand = point.x <= left + radius + epsilon;
+    const inRightCornerBand = point.x >= right - radius - epsilon;
+    const inTopCornerBand = point.y <= top + radius + epsilon;
+    const inBottomCornerBand = point.y >= bottom - radius - epsilon;
+
+    if (inLeftCornerBand && inTopCornerBand) {
+      return "top-left";
+    }
+    if (inRightCornerBand && inTopCornerBand) {
+      return "top-right";
+    }
+    if (inLeftCornerBand && inBottomCornerBand) {
+      return "bottom-left";
+    }
+    if (inRightCornerBand && inBottomCornerBand) {
+      return "bottom-right";
+    }
+
+    const distances = [
+      { side: "top", value: Math.abs(point.y - top) },
+      { side: "bottom", value: Math.abs(point.y - bottom) },
+      { side: "left", value: Math.abs(point.x - left) },
+      { side: "right", value: Math.abs(point.x - right) },
+    ];
+    distances.sort((a, b) => a.value - b.value);
+    return distances[0]?.side || null;
+  }
+
   getInwardShootDirection(sourcePoint) {
     const trackRect = this.conveyor?.trackRect;
     if (trackRect) {
@@ -5608,7 +5657,7 @@ class Game {
 
   getSpiralBuildPriority(target, forwardDistance) {
     const spiralIndex = Number.isFinite(target?.spiralIndex) ? target.spiralIndex : Number.MAX_SAFE_INTEGER;
-    const distancePriority = Number.isFinite(forwardDistance) ? -forwardDistance : Number.MAX_SAFE_INTEGER;
+    const distancePriority = Number.isFinite(forwardDistance) ? forwardDistance : Number.MAX_SAFE_INTEGER;
     const spiralOrder = Number.isFinite(target?.spiralOrder) ? target.spiralOrder : Number.MAX_SAFE_INTEGER;
     return {
       spiralIndex,
@@ -5831,6 +5880,211 @@ class Game {
     return reachable;
   }
 
+  getTargetRegionTags(target, activeTargets) {
+    if (!target || !Array.isArray(activeTargets) || activeTargets.length === 0) {
+      return new Set();
+    }
+    let minRow = Infinity;
+    let maxRow = -Infinity;
+    let minCol = Infinity;
+    let maxCol = -Infinity;
+    for (const activeTarget of activeTargets) {
+      if (!activeTarget) {
+        continue;
+      }
+      minRow = Math.min(minRow, activeTarget.row);
+      maxRow = Math.max(maxRow, activeTarget.row);
+      minCol = Math.min(minCol, activeTarget.col);
+      maxCol = Math.max(maxCol, activeTarget.col);
+    }
+
+    if (minRow === maxRow && minCol === maxCol) {
+      return new Set(["all"]);
+    }
+
+    const tags = new Set();
+    const onTop = target.row === minRow;
+    const onBottom = target.row === maxRow;
+    const onLeft = target.col === minCol;
+    const onRight = target.col === maxCol;
+
+    if (onTop) {
+      tags.add("top");
+    }
+    if (onBottom) {
+      tags.add("bottom");
+    }
+    if (onLeft) {
+      tags.add("left");
+    }
+    if (onRight) {
+      tags.add("right");
+    }
+    if (onTop && onLeft) {
+      tags.add("top-left");
+    }
+    if (onTop && onRight) {
+      tags.add("top-right");
+    }
+    if (onBottom && onLeft) {
+      tags.add("bottom-left");
+    }
+    if (onBottom && onRight) {
+      tags.add("bottom-right");
+    }
+
+    return tags;
+  }
+
+  doesTrackRegionMatchTarget(trackRegion, targetRegionTags) {
+    if (!trackRegion || !(targetRegionTags instanceof Set) || targetRegionTags.size === 0) {
+      return true;
+    }
+    if (targetRegionTags.has("all")) {
+      return true;
+    }
+    if (trackRegion === "top-left" || trackRegion === "top-right" || trackRegion === "bottom-left" || trackRegion === "bottom-right") {
+      return targetRegionTags.has(trackRegion);
+    }
+    if (trackRegion === "top") {
+      return targetRegionTags.has("top");
+    }
+    if (trackRegion === "bottom") {
+      return targetRegionTags.has("bottom");
+    }
+    if (trackRegion === "left") {
+      return targetRegionTags.has("left");
+    }
+    if (trackRegion === "right") {
+      return targetRegionTags.has("right");
+    }
+    return true;
+  }
+
+  isTargetOnTrackRegionFrontier(target, trackRegion, activeTargets) {
+    if (!target || !trackRegion || !Array.isArray(activeTargets) || activeTargets.length === 0) {
+      return true;
+    }
+
+    const regionTargets = activeTargets.filter((candidate) => {
+      const candidateRegionTags = this.getTargetRegionTags(candidate, activeTargets);
+      return this.doesTrackRegionMatchTarget(trackRegion, candidateRegionTags);
+    });
+    if (regionTargets.length === 0) {
+      return true;
+    }
+
+    if (trackRegion === "top") {
+      const frontierRow = Math.min(...regionTargets.map((candidate) => candidate.row));
+      return target.row === frontierRow;
+    }
+    if (trackRegion === "bottom") {
+      const frontierRow = Math.max(...regionTargets.map((candidate) => candidate.row));
+      return target.row === frontierRow;
+    }
+    if (trackRegion === "left") {
+      const frontierCol = Math.min(...regionTargets.map((candidate) => candidate.col));
+      return target.col === frontierCol;
+    }
+    if (trackRegion === "right") {
+      const frontierCol = Math.max(...regionTargets.map((candidate) => candidate.col));
+      return target.col === frontierCol;
+    }
+    if (trackRegion === "top-left") {
+      const frontierRow = Math.min(...regionTargets.map((candidate) => candidate.row));
+      const frontierCol = Math.min(...regionTargets.map((candidate) => candidate.col));
+      return target.row === frontierRow && target.col === frontierCol;
+    }
+    if (trackRegion === "top-right") {
+      const frontierRow = Math.min(...regionTargets.map((candidate) => candidate.row));
+      const frontierCol = Math.max(...regionTargets.map((candidate) => candidate.col));
+      return target.row === frontierRow && target.col === frontierCol;
+    }
+    if (trackRegion === "bottom-left") {
+      const frontierRow = Math.max(...regionTargets.map((candidate) => candidate.row));
+      const frontierCol = Math.min(...regionTargets.map((candidate) => candidate.col));
+      return target.row === frontierRow && target.col === frontierCol;
+    }
+    if (trackRegion === "bottom-right") {
+      const frontierRow = Math.max(...regionTargets.map((candidate) => candidate.row));
+      const frontierCol = Math.max(...regionTargets.map((candidate) => candidate.col));
+      return target.row === frontierRow && target.col === frontierCol;
+    }
+    return true;
+  }
+
+  getTrackRegionFrontierLock(trackRegion, activeTargets = null) {
+    if (!trackRegion) {
+      return null;
+    }
+    const targets = Array.isArray(activeTargets) ? activeTargets : this.getNextSpiralTargets();
+    if (targets.length === 0) {
+      return null;
+    }
+    const regionTargets = targets.filter((candidate) => {
+      const candidateRegionTags = this.getTargetRegionTags(candidate, targets);
+      return this.doesTrackRegionMatchTarget(trackRegion, candidateRegionTags);
+    });
+    if (regionTargets.length === 0) {
+      return null;
+    }
+
+    if (trackRegion === "top") {
+      return { region: trackRegion, row: Math.min(...regionTargets.map((candidate) => candidate.row)) };
+    }
+    if (trackRegion === "bottom") {
+      return { region: trackRegion, row: Math.max(...regionTargets.map((candidate) => candidate.row)) };
+    }
+    if (trackRegion === "left") {
+      return { region: trackRegion, col: Math.min(...regionTargets.map((candidate) => candidate.col)) };
+    }
+    if (trackRegion === "right") {
+      return { region: trackRegion, col: Math.max(...regionTargets.map((candidate) => candidate.col)) };
+    }
+    if (trackRegion === "top-left") {
+      return {
+        region: trackRegion,
+        row: Math.min(...regionTargets.map((candidate) => candidate.row)),
+        col: Math.min(...regionTargets.map((candidate) => candidate.col)),
+      };
+    }
+    if (trackRegion === "top-right") {
+      return {
+        region: trackRegion,
+        row: Math.min(...regionTargets.map((candidate) => candidate.row)),
+        col: Math.max(...regionTargets.map((candidate) => candidate.col)),
+      };
+    }
+    if (trackRegion === "bottom-left") {
+      return {
+        region: trackRegion,
+        row: Math.max(...regionTargets.map((candidate) => candidate.row)),
+        col: Math.min(...regionTargets.map((candidate) => candidate.col)),
+      };
+    }
+    if (trackRegion === "bottom-right") {
+      return {
+        region: trackRegion,
+        row: Math.max(...regionTargets.map((candidate) => candidate.row)),
+        col: Math.max(...regionTargets.map((candidate) => candidate.col)),
+      };
+    }
+    return { region: trackRegion };
+  }
+
+  doesTargetMatchTrackRegionFrontierLock(target, frontierLock) {
+    if (!target || !frontierLock) {
+      return true;
+    }
+    if (Number.isFinite(frontierLock.row) && target.row !== frontierLock.row) {
+      return false;
+    }
+    if (Number.isFinite(frontierLock.col) && target.col !== frontierLock.col) {
+      return false;
+    }
+    return true;
+  }
+
   getNextSpiralTargetForColor(color) {
     const targets = this.getNextSpiralTargets();
     for (const target of targets) {
@@ -5846,7 +6100,7 @@ class Game {
     if (!conveyor || !Number.isFinite(conveyor.totalLength) || conveyor.totalLength <= 0) {
       return false;
     }
-    const sampleStep = Math.max(3, LAYOUT.cellSize * 0.45);
+    const sampleStep = Math.max(1, LAYOUT.cellSize * 0.12);
     const sampleCount = Math.max(1, Math.ceil(conveyor.totalLength / sampleStep));
     for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
       const distance = (sampleIndex / sampleCount) * conveyor.totalLength;
@@ -5873,13 +6127,56 @@ class Game {
     return this.canColorShootNextSpiralTargetFromTrack(color);
   }
 
-  findTargetOnLine(sourcePoint, color, direction) {
+  getAxisDistanceToTargetForSide(sourcePoint, target, side) {
+    if (!sourcePoint || !target || !side) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const center = this.blockCenter(target);
+    if (side === "top" || side === "bottom") {
+      return Math.abs(center.x - sourcePoint.x);
+    }
+    if (side === "left" || side === "right") {
+      return Math.abs(center.y - sourcePoint.y);
+    }
+    return Math.hypot(center.x - sourcePoint.x, center.y - sourcePoint.y);
+  }
+
+  isRegionFallbackPriorityBetter(next, current) {
+    if (!current) {
+      return true;
+    }
+    if (next.spiralIndex !== current.spiralIndex) {
+      return next.spiralIndex < current.spiralIndex;
+    }
+    if (next.axisDistance !== current.axisDistance) {
+      return next.axisDistance < current.axisDistance;
+    }
+    if (next.spiralOrder !== current.spiralOrder) {
+      return next.spiralOrder < current.spiralOrder;
+    }
+    return false;
+  }
+
+  findTargetOnLine(sourcePoint, color, direction, options = {}) {
     const lineHalfWidth = this.getShotLineHalfWidth();
+    const sourceRegion = this.getTrackRegionForPoint(sourcePoint);
+    const activeTargets = this.getNextSpiralTargets();
+    const frontierLock = options?.frontierLock || null;
     let bestTarget = null;
     let bestPriority = null;
 
-    for (const target of this.getNextSpiralTargets()) {
+    for (const target of activeTargets) {
       if (target.color !== color) {
+        continue;
+      }
+      const targetRegionTags = this.getTargetRegionTags(target, activeTargets);
+      if (!this.doesTrackRegionMatchTarget(sourceRegion, targetRegionTags)) {
+        continue;
+      }
+      if (!this.doesTargetMatchTrackRegionFrontierLock(target, frontierLock)) {
+        continue;
+      }
+      if (!this.isTargetOnTrackRegionFrontier(target, sourceRegion, activeTargets)) {
         continue;
       }
       const allowedProbes = this.getAllowedReachableProbesForTarget(target);
@@ -6640,25 +6937,28 @@ class Game {
     }
 
     const now = performance.now();
+    const globalPulse = 0.5 + 0.5 * Math.sin(now * 0.0042);
     for (let index = 0; index < targets.length; index += 1) {
       const target = targets[index];
       const isBlackTarget = String(target.color || "").toLowerCase() === "black";
       const colorGhostAlphaMul = isBlackTarget ? 1 : 0.58;
-      const pulse = 0.88 + 0.12 * Math.sin(now * 0.005 + index * 0.47);
+      const localPulse = 0.5 + 0.5 * Math.sin(now * 0.005 + index * 0.47);
+      const pulse = 0.65 * globalPulse + 0.35 * localPulse;
       const centerX = target.x + target.size * 0.5;
       const centerY = target.y + target.size * 0.5;
-      const alphaBase = (0.64 + 0.14 * pulse) * colorGhostAlphaMul;
-      const glowAlpha = (0.18 * alphaBase) * (0.9 + 0.16 * pulse);
-      const glowRadius = target.size * (0.8 + 0.1 * pulse);
-      const growScale = 0.96 + 0.08 * pulse;
+      const alphaBase = (0.62 + 0.24 * pulse) * colorGhostAlphaMul;
+      const glowAlpha = (0.22 * alphaBase) * (0.92 + 0.3 * pulse);
+      const glowRadius = target.size * (0.82 + 0.18 * pulse);
+      const growScale = 0.95 + 0.12 * pulse;
+      const liftY = -target.size * (0.015 + 0.03 * pulse);
 
       ctx.save();
       const glowGradient = ctx.createRadialGradient(
         centerX,
-        centerY + target.size * 0.18,
+        centerY + target.size * 0.16,
         0,
         centerX,
-        centerY + target.size * 0.18,
+        centerY + target.size * 0.16,
         glowRadius
       );
       glowGradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha.toFixed(3)})`);
@@ -6678,7 +6978,7 @@ class Game {
       ctx.save();
       ctx.translate(centerX, centerY);
       ctx.scale(growScale, growScale);
-      ctx.translate(-centerX, -centerY);
+      ctx.translate(-centerX, -centerY + liftY);
       this.drawVolumetricBlock(ctx, target, target.x, target.y, {
         alpha: 0.78 * alphaBase,
         shadowOpacity: 0.14,
@@ -7360,7 +7660,7 @@ class Game {
       ctx.imageSmoothingQuality = "high";
     }
     const x = popupX + 128 * sx;
-    const y = popupY + 244 * sy * (1 - LOSE_POPUP_BIRDS_DROP_RATIO);
+    const y = popupY + 244 * sy * (1 - LOSE_POPUP_BIRDS_DROP_RATIO) + 52 * sy;
     const w = 390 * sx;
     const h = 158 * sy;
     ctx.drawImage(this.losePopupBirdsImage, x, y, w, h);
